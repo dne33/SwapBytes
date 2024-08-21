@@ -1,0 +1,17 @@
+[package]
+name = "hello-ratatui"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+futures = "0.3.30"
+ratatui = "0.28.0"
+tokio = { version = "1.38.1", features = ["full"] }
+serde = { version = "1.0", features = ["derive"] }
+clap = { version = "4.5.6", features = ["derive"] }
+libp2p = { version="0.54.1", features = [ "tokio", "cbor", "dns", "kad", "noise", "macros", "request-response", "tcp", "websocket", "yamux", "gossipsub", "mdns", "quic"] }
+void = "1.0.2"
+lazy_static = "1.4"
+simplelog = "0.12.2"
+log = "0.4.22"
+

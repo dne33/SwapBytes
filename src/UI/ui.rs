@@ -1,0 +1,101 @@
+use crate::state::APP;
+use crate::state::Screen;
+use ratatui::{
+    crossterm::{
+        event::{self, DisableMouseCapture, EnableMouseCapture, Event, KeyCode, KeyEventKind},
+        execute,
+        terminal::{disable_raw_mode, enable_raw_mode, EnterAlternateScreen, LeaveAlternateScreen},
+    },
+    prelude::*,
+    widgets::{Block, List, ListItem, Paragraph, Borders},
+};
+
+pub fn render_ui(frame: &mut Frame) {
+    let current_screen = APP.lock().unwrap().current_screen.clone();
+    match current_screen {
+        Screen::LoginScreen => render_login_screen(frame),
+        Screen::MainScreen => render_main_screen(frame),
+        Screen::HelpScreen => render_help_screen(frame),
+    }
+}
+
+fn render_main_screen(frame: &mut Frame) {
+    let mut app = APP.lock().unwrap();
+    let vertical = Layout::vertical([
+        Constraint::Length(1),
+        Constraint::Length(3),
+        Constraint::Min(1),
+    ]);
+    let [help_area, input_area, messages_area] = vertical.areas(frame.area());
+
+    let (msg, style) = (
+        vec!["SwapBytes ".bold()],
+        Style::default(),
+    );
+
+    let text = Text::from(Line::from(msg)).patch_style(style);
+    let help_message = Paragraph::new(text);
+    frame.render_widget(help_message, help_area);
+
+    let input = Paragraph::new(app.input.as_str())
+        .style(Style::default().fg(Color::Yellow))
+        .block(Block::bordered().title("Input"));
+    frame.render_widget(input, input_area);
+
+    frame.set_cursor_position(Position {
+        x: input_area.x + app.character_index as u16 + 1,
+        y: input_area.y + 1,
+    });
+
+    let messages: Vec<ListItem> = app
+        .messages
+        .iter()
+        .map(|m| ListItem::new(Line::from(Span::raw(m))))
+        .collect();
+
+    let messages = List::new(messages).block(Block::bordered().title("Messages"));
+    frame.render_widget(messages, messages_area);
+}
+
+fn render_help_screen(frame: &mut Frame) {
+    let block = Block::default().title("Help").borders(Borders::ALL);
+    frame.render_widget(block, frame.area());
+    // Add more content to the help screen as needed
+}
+
+fn render_login_screen(frame: &mut Frame) {
+    let mut app = APP.lock().unwrap();
+    let vertical = Layout::vertical([
+        Constraint::Length(1),
+        Constraint::Length(3),
+    ]);
+    let [help_area, input_area] = vertical.areas(frame.area());
+
+    let (msg, style) = (
+        vec!["SwapBytes ".bold()],
+        Style::default(),
+    );
+
+    let text = Text::from(Line::from(msg)).patch_style(style);
+    let help_message = Paragraph::new(text);
+    frame.render_widget(help_message, help_area);
+
+    let input = Paragraph::new(app.input.as_str())
+        .style(Style::default().fg(Color::Yellow))
+        .block(Block::bordered().title("Enter a Username"));
+    frame.render_widget(input, input_area);
+
+    frame.set_cursor_position(Position {
+        x: input_area.x + app.character_index as u16 + 1,
+        y: input_area.y + 1,
+    });
+
+//     let messages: Vec<ListItem> = app
+//         .messages
+//         .iter()
+//         .map(|m| ListItem::new(Line::from(Span::raw(m))))
+//         .collect();
+
+//     let messages = List::new(messages).block(Block::bordered().title("Messages"));
+//     frame.render_widget(messages, messages_area);
+}
