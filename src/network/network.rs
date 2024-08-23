@@ -22,18 +22,9 @@ use tokio::{io, io::AsyncBufReadExt, select};
 use std::hash::{Hash, DefaultHasher, Hasher};
 use crate::network::network_behaviour::{mdns_behaviour, gossipsub_behaviour, kademlia_behaviour, request_response_behaviour};
 use crate::state::APP;
-
 use crate::logger;
 
 
-/// Creates the network components, namely:
-///
-/// - The network client to interact with the network layer from anywhere
-///   within your application.
-///
-/// - The network event stream, e.g. for incoming requests.
-///
-/// - The network task driving the network itself.
 pub(crate) async fn new() -> Result<(Client, impl Stream<Item = Event>, EventLoop), Box<dyn Error>> {
     let mut swarm = libp2p::SwarmBuilder::with_new_identity()
         .with_tokio()
@@ -181,12 +172,24 @@ impl Client {
         &mut self,
         message: String,
     ) {
-        logger::info!("Got the shoulder tap");
+        logger::info!("Submitting message: {:?}", message.clone());
 
         self.sender
             .send(Command::SendMessage { message, topic: self.topic.clone() })
             .await
             .expect("Message Sent.");
+    }
+
+    pub(crate) async fn push_username(
+        &mut self,
+        username: String,
+    ) {
+        logger::info!("Pushing username: {:?}", username.clone());
+
+        self.sender
+            .send(Command::PushUsername { username })
+            .await
+            .expect("username Pushed.");
     }
 }
 
@@ -357,7 +360,21 @@ impl EventLoop {
                     .send_response(channel, Response(file))
                     .expect("Connection to peer to be still open.");
             }
-            
+            Command::PushUsername { username } => {
+                logger::info!("Attempting to add username");
+                let serial_username = serde_cbor::to_vec(&username).unwrap();
+                let record = kad::Record {
+                    key: kad::RecordKey::new(&self.swarm.local_peer_id().to_string()),
+                    value: serial_username,
+                    publisher: None,
+                    expires: None,
+                };
+
+                self.swarm.behaviour_mut().kademlia
+                    .put_record(record, kad::Quorum::One)
+                    .expect("Failed to store record locally");
+                logger::info!("No errors in storing username");
+            }
         
         }
     }
@@ -402,6 +419,9 @@ enum Command {
     SendMessage {
         message: String,
         topic: IdentTopic,
+    },
+    PushUsername {
+        username: String,
     }
 }
 

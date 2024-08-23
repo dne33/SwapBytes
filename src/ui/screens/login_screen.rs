@@ -46,15 +46,15 @@ pub fn render(frame: &mut Frame) {
     
 }
 
-pub async fn handle_events() -> Result<bool, std::io::Error> {
+pub async fn handle_events(client: &mut Client) -> Result<bool, std::io::Error> {
     let mut app = APP.lock().unwrap();
     if let Event::Key(key) = event::read()? {
             if key.kind == KeyEventKind::Press {
                 match key.code {
                     KeyCode::Enter => {
                         if !app.input.clone().is_empty() && app.connected_peers > 0 {
-                            logger::info!("Should Move through");
                             app.username = app.input.clone();
+                            client.push_username(app.input.clone()).await;
                             app.clear_input();
                             return Ok(true);
                         }

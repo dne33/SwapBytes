@@ -14,46 +14,41 @@ pub async fn handle_event(
     pending_get_providers: &mut HashMap<kad::QueryId, oneshot::Sender<HashSet<PeerId>>>,
 ) {
     match event {
-        kad::Event::OutboundQueryProgressed {
-            id,
-            result: kad::QueryResult::StartProviding(_),
-            ..
-        } => {
-        let sender: oneshot::Sender<()> =
-            pending_start_providing
-            .remove(&id)
-            .expect("Completed query to be previously pending.");
-        let _ = sender.send(());
-        },
-        kad::Event::OutboundQueryProgressed {
-                id,
-                result:
-                    kad::QueryResult::GetProviders(Ok(kad::GetProvidersOk::FoundProviders {
-                        providers,
-                        ..
-                    })),
-                ..
-            } => {
-            if let Some(sender) = pending_get_providers.remove(&id) {
-                sender.send(providers).expect("Receiver not to be dropped");
-
-                // Finish the query. We are only interested in the first result.
-                swarm
-                    .behaviour_mut()
-                    .kademlia
-                    .query_mut(&id)
-                    .unwrap()
-                    .finish();
+        kad::Event::OutboundQueryProgressed { result, .. } => {
+                match result {
+                    kad::QueryResult::GetRecord(Ok(
+                        kad::GetRecordOk::FoundRecord(kad::PeerRecord {
+                            record: kad::Record { key, value, .. },
+                            ..
+                        })
+                    )) => {
+                        match serde_cbor::from_slice::<String>(&value) {
+                            Ok(username) => {
+                                logger::info!(
+                                    "Got record {:?} {:?}", 
+                                    std::str::from_utf8(key.as_ref()).unwrap(),
+                                    username,
+                                )
+                            }
+                            Err(e) => {
+                                logger::error!("Error deserializing: {e:?}");
+                            }
+                        }
+                    }
+                    kad::QueryResult::GetRecord(Ok(_)) => {}
+                    kad::QueryResult::GetRecord(Err(err)) => {
+                        logger::info!("Failed to get record {err:?}");
+                    }
+                    kad::QueryResult::PutRecord(Ok(kad::PutRecordOk { key })) => {
+                        logger::info!("Successfully put record {:?}", std::str::from_utf8(key.as_ref()).unwrap());
+                    }
+                    kad::QueryResult::PutRecord(Err(err)) => {
+                        logger::error!("Failed to put record: {err:?}");
+                    }
+                    _ => {}
+                }
             }
-        },
-        kad::Event::OutboundQueryProgressed {
-                result:
-                    kad::QueryResult::GetProviders(Ok(
-                        kad::GetProvidersOk::FinishedWithNoAdditionalRecord { .. },
-                    )),
-                ..
-        } => {},
-        _ => {}
+            _ => {}
     }
 }
 

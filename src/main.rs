@@ -26,6 +26,7 @@ pub mod ui {
         pub mod main_screen;
         pub mod help_screen;
         pub mod login_screen;
+        pub mod select_room_screen;
     }
     pub mod ui_router;
 }
@@ -72,7 +73,7 @@ async fn main() -> Result<(), Box<dyn Error>> {
         terminal.draw(|f| render(f))?;
         break_loop = ui::ui_router::handle_events(&mut network_client).await?;
     }
-    logger::info!("To next loop");
+    logger::info!("User has added their username");
 
     APP.lock().unwrap().current_screen = MainScreen;
     // create app and run it

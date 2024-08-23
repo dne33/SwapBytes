@@ -1,12 +1,16 @@
 use lazy_static::lazy_static;
 use std::sync::{Mutex, Arc};
+use ratatui::widgets::ListState;
+
 
 #[derive(Clone, PartialEq)]
 pub enum Screen {
     LoginScreen,
     MainScreen,
     HelpScreen,
+    SelectRoomScreen,
 }
+
 /// App holds the state of the application
 pub struct App {
     /// Current value of the input box
@@ -21,18 +25,35 @@ pub struct App {
     pub username: String,
 
     pub connected_peers: i16,
+
+    /// List of available rooms
+    pub rooms: Vec<String>,
+    /// State of the room list for selection
+    pub room_state: ListState,
+
+    pub current_room: usize,
 }
 
 impl App {
     pub fn new() -> Self {
+        let mut room_state = ListState::default();
+        room_state.select(Some(0)); // Start with the first room selected
+
         Self {
             input: String::new(),
             messages: Vec::new(),
             character_index: 0,
-            current_screen: Screen::LoginScreen, 
+            current_screen: Screen::LoginScreen,
             username: String::new(),
             connected_peers: 0,
-
+            rooms: vec![
+                "Global".to_string(),
+                "Engineering".to_string(),
+                "Sciences".to_string(),
+                "Arts".to_string(),
+            ],
+            room_state,
+            current_room: 0,
         }
     }
 

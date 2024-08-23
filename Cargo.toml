@@ -14,4 +14,5 @@ void = "1.0.2"
 lazy_static = "1.4"
 simplelog = "0.12.2"
 log = "0.4.22"
+serde_cbor = "0.11.2"
 
