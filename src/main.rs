@@ -10,8 +10,6 @@ use ratatui::{
     widgets::{Block, List, ListItem, Paragraph},
 };
 
-mod network;
-
 use tokio::task::spawn;
 use futures::prelude::*;
 use futures::StreamExt;
@@ -19,12 +17,29 @@ use std::path::PathBuf;
 
 mod state;
 use state::APP;
-use state::Screen;
+use state::Screen::MainScreen;
 
 pub mod logger;
 
-mod UI;
-use UI::ui::render_ui;
+pub mod ui {
+    pub mod screens {
+        pub mod main_screen;
+        pub mod help_screen;
+        pub mod login_screen;
+    }
+    pub mod ui_router;
+}
+pub mod network {
+    pub mod network_behaviour {
+        pub mod mdns_behaviour;
+        pub mod gossipsub_behaviour;
+        pub mod kademlia_behaviour;
+        pub mod request_response_behaviour;
+    }
+    pub mod network;
+}
+
+use ui::ui_router::{render, handle_events};
 
 
 
@@ -32,7 +47,7 @@ use UI::ui::render_ui;
 async fn main() -> Result<(), Box<dyn Error>> {
 
     let (mut network_client, mut network_events, network_event_loop) =
-        network::new().await?;
+        network::network::new().await?;
 
     // Spawn the network task for it to run in the background.
     spawn(network_event_loop.run());
@@ -51,40 +66,20 @@ async fn main() -> Result<(), Box<dyn Error>> {
     execute!(stdout, EnterAlternateScreen, EnableMouseCapture)?;
     let backend = CrosstermBackend::new(stdout);
     let mut terminal = Terminal::new(backend)?;
+    // Log in sequence
+    let mut break_loop = false;
+    while !break_loop {
+        terminal.draw(|f| render(f))?;
+        break_loop = ui::ui_router::handle_events(&mut network_client).await?;
+    }
+    logger::info!("To next loop");
 
+    APP.lock().unwrap().current_screen = MainScreen;
     // create app and run it
-    loop {
-        terminal.draw(|f| render_ui(f))?;
-        if let Event::Key(key) = event::read()? {
-            if key.kind == KeyEventKind::Press {
-                let mut app = APP.lock().unwrap();
-                match key.code {
-                    KeyCode::Enter => {
-                        logger::info!("Shoulder tapping");
-                        network_client.submit_message(app.input.clone()).await;
-                        app.submit_message();
-                    }
-                    KeyCode::Char(to_insert) => {
-                        app.enter_char(to_insert);
-                    }
-                    KeyCode::Backspace => {
-                        app.delete_char();
-                    }
-                    KeyCode::Left => {
-                        app.move_cursor_left();
-                    }
-                    KeyCode::Right => {
-                        app.move_cursor_right();
-                    },
-                    KeyCode::Tab => {
-                    },
-                    KeyCode::Esc => {
-                        break;
-                    }
-                    _ => {}
-                }
-            }
-        }
+    break_loop = false;
+    while !break_loop {
+        terminal.draw(|f| render(f))?;
+        break_loop = ui::ui_router::handle_events( &mut network_client).await?;
     }
 
     // restore terminal

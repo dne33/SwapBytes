@@ -13,7 +13,6 @@ use libp2p::{
     gossipsub, mdns, 
 };
 use libp2p::gossipsub::IdentTopic;
-
 use libp2p::StreamProtocol;
 use serde::{Deserialize, Serialize};
 use std::collections::{hash_map, HashMap, HashSet};
@@ -21,10 +20,12 @@ use std::error::Error;
 use std::time::Duration;
 use tokio::{io, io::AsyncBufReadExt, select};
 use std::hash::{Hash, DefaultHasher, Hasher};
-
+use crate::network::network_behaviour::{mdns_behaviour, gossipsub_behaviour, kademlia_behaviour, request_response_behaviour};
 use crate::state::APP;
 
 use crate::logger;
+
+
 /// Creates the network components, namely:
 ///
 /// - The network client to interact with the network layer from anywhere
@@ -168,7 +169,7 @@ impl Client {
     pub(crate) async fn respond_file(
         &mut self,
         file: Vec<u8>,
-        channel: ResponseChannel<FileResponse>,
+        channel: ResponseChannel<Response>,
     ) {
         self.sender
             .send(Command::RespondFile { file, channel })
@@ -201,7 +202,6 @@ pub(crate) struct EventLoop {
 }
 
 impl EventLoop {
-
     fn new(
         swarm: Swarm<Behaviour>,
         command_receiver: mpsc::Receiver<Command>,
@@ -224,134 +224,46 @@ impl EventLoop {
                 event = self.swarm.select_next_some() => self.handle_event(event).await,
                 command = self.command_receiver.next() => match command {
                     Some(c) => self.handle_command(c).await,
-                    // Command channel closed, thus shutting down the network event loop.
-                    None=>  return,
+                    None => return,
                 },
             }
         }
     }
 
     async fn handle_event(&mut self, event: SwarmEvent<BehaviourEvent>) {
-        logger::info!("Event happened");
-
+        logger::info!("Event happened {:?}", event);
+        
         match event {
-             SwarmEvent::Behaviour(BehaviourEvent::Mdns(mdns::Event::Discovered(list))) => {
-                for (peer_id, _multiaddr) in list {
-                    logger::info!("mDNS discover peer: {peer_id}");
-                    self.swarm.behaviour_mut().gossipsub.add_explicit_peer(&peer_id);
-                    // APP.lock().unwrap()./
-                }
+            SwarmEvent::Behaviour(BehaviourEvent::Gossipsub(event)) => {
+                gossipsub_behaviour::handle_event(event).await;
             },
-            SwarmEvent::Behaviour(BehaviourEvent::Mdns(mdns::Event::Expired(list))) => {
-                for (peer_id, _multiaddr) in list {
-                    logger::info!("mDNS discover peer has expired: {peer_id}");
-                    self.swarm.behaviour_mut().gossipsub.remove_explicit_peer(&peer_id);
-                }
+            
+             // Handle MDNS events
+            SwarmEvent::Behaviour(BehaviourEvent::Mdns(event)) => {
+                mdns_behaviour::handle_event(event, &mut self.swarm).await;
             },
-            SwarmEvent::Behaviour(BehaviourEvent::Gossipsub(gossipsub::Event::Message {
-                    propagation_source: peer_id,
-                    message_id: id,
-                    message,
-                })) =>  {
-                    logger::info!("In the swarm behaviour for recieving");
-                    let mut app = APP.lock().unwrap();
-                    let msg = String::from_utf8_lossy(&message.data);
-                    let final_msg = format!( "{msg} : {peer_id}");
-                    app.messages.push(
-                        final_msg.clone()
-                    );
-                    drop(app);
-                    logger::info!("Recieved message final_msg");
-                },
-            SwarmEvent::Behaviour(BehaviourEvent::Kademlia(
-                kad::Event::OutboundQueryProgressed {
-                    id,
-                    result: kad::QueryResult::StartProviding(_),
-                    ..
-                },
-            )) => {
-                let sender: oneshot::Sender<()> = self
-                    .pending_start_providing
-                    .remove(&id)
-                    .expect("Completed query to be previously pending.");
-                let _ = sender.send(());
+            
+           
+            SwarmEvent::ConnectionClosed { peer_id, .. } => {
+                logger::info!("Connection closed for peer: {peer_id}");
+                self.swarm.behaviour_mut().gossipsub.remove_explicit_peer(&peer_id);
+                let mut app = APP.lock().unwrap();
+                app.connected_peers -= 1;
+                
             },
-            SwarmEvent::Behaviour(BehaviourEvent::Kademlia(
-                kad::Event::OutboundQueryProgressed {
-                    id,
-                    result:
-                        kad::QueryResult::GetProviders(Ok(kad::GetProvidersOk::FoundProviders {
-                            providers,
-                            ..
-                        })),
-                    ..
-                },
-            )) => {
-                if let Some(sender) = self.pending_get_providers.remove(&id) {
-                    sender.send(providers).expect("Receiver not to be dropped");
+            
+            SwarmEvent::Behaviour(BehaviourEvent::Kademlia(event)) => {
+                kademlia_behaviour::handle_event(event, &mut self.swarm, &mut self.pending_start_providing, &mut self.pending_get_providers).await;
+            },
 
-                    // Finish the query. We are only interested in the first result.
-                    self.swarm
-                        .behaviour_mut()
-                        .kademlia
-                        .query_mut(&id)
-                        .unwrap()
-                        .finish();
-                }
+            SwarmEvent::Behaviour(BehaviourEvent::RequestResponse(event)) => {
+                request_response_behaviour::handle_event(event).await;
             },
-            SwarmEvent::Behaviour(BehaviourEvent::Kademlia(
-                kad::Event::OutboundQueryProgressed {
-                    result:
-                        kad::QueryResult::GetProviders(Ok(
-                            kad::GetProvidersOk::FinishedWithNoAdditionalRecord { .. },
-                        )),
-                    ..
-                },
-            )) => {},
-            SwarmEvent::Behaviour(BehaviourEvent::Kademlia(_)) => {}
-            SwarmEvent::Behaviour(BehaviourEvent::RequestResponse(
-                request_response::Event::Message { message, .. },
-            )) => match message {
-                request_response::Message::Request {
-                    request, channel, ..
-                } => {
-                    self.event_sender
-                        .send(Event::InboundRequest {
-                            request: request.0,
-                            channel,
-                        })
-                        .await
-                        .expect("Event receiver not to be dropped.");
-                }
-                request_response::Message::Response {
-                    request_id,
-                    response,
-                } => {
-                    let _ = self
-                        .pending_request_file
-                        .remove(&request_id)
-                        .expect("Request to still be pending.")
-                        .send(Ok(response.0));
-                }
-            },
-            SwarmEvent::Behaviour(BehaviourEvent::RequestResponse(
-                request_response::Event::OutboundFailure {
-                    request_id, error, ..
-                },
-            )) => {
-                let _ = self
-                    .pending_request_file
-                    .remove(&request_id)
-                    .expect("Request to still be pending.")
-                    .send(Err(Box::new(error)));
-            },
-            SwarmEvent::Behaviour(BehaviourEvent::RequestResponse(
-                request_response::Event::ResponseSent { .. },
-            )) => {},
+        
             SwarmEvent::NewListenAddr { address, .. } => {
                 let local_peer_id = *self.swarm.local_peer_id();
             },
-            SwarmEvent::IncomingConnection { .. } => {},
+            
             SwarmEvent::ConnectionEstablished {
                 peer_id, endpoint, ..
             } => {
@@ -361,7 +273,6 @@ impl EventLoop {
                     }
                 }
             },
-            SwarmEvent::ConnectionClosed { .. } => {},
             SwarmEvent::OutgoingConnectionError { peer_id, error, .. } => {
                 if let Some(peer_id) = peer_id {
                     if let Some(sender) = self.pending_dial.remove(&peer_id) {
@@ -369,15 +280,19 @@ impl EventLoop {
                     }
                 }
             },
+            SwarmEvent::IncomingConnection { .. } => {},
             SwarmEvent::IncomingConnectionError { .. } => {},
-            
-    
             e => logger::error!("{e:?}"),
         }
     }
 
     async fn handle_command(&mut self, command: Command) {
         match command {
+            Command::SendMessage { message, topic } => {
+                self.swarm.behaviour_mut().gossipsub.publish(topic.clone(), message.clone().as_bytes());
+                logger::info!("{} sent successfully.", message.clone());
+            }
+
             Command::StartListening { addr, sender } => {
                 let _ = match self.swarm.listen_on(addr) {
                     Ok(_) => sender.send(Ok(())),
@@ -432,37 +347,28 @@ impl EventLoop {
                     .swarm
                     .behaviour_mut()
                     .request_response
-                    .send_request(&peer, FileRequest(file_name));
+                    .send_request(&peer, Request(file_name));
                 self.pending_request_file.insert(request_id, sender);
             }
             Command::RespondFile { file, channel } => {
                 self.swarm
                     .behaviour_mut()
                     .request_response
-                    .send_response(channel, FileResponse(file))
+                    .send_response(channel, Response(file))
                     .expect("Connection to peer to be still open.");
             }
-            Command::SendMessage { message, topic } => {
-                match self.swarm.behaviour_mut().gossipsub.publish(topic.clone(), message.as_bytes()) {
-                    Ok(_) => {
-                        logger::info!("Message sent successfully.");
-                    }
-                    Err(e) => {
-                        logger::error!("Failed to send message: {:?}", e);
-                    }
-                }
-            }
+            
         
         }
     }
 }
 
 #[derive(NetworkBehaviour)]
-struct Behaviour {
-    request_response: request_response::cbor::Behaviour<FileRequest, FileResponse>,
-    kademlia: kad::Behaviour<kad::store::MemoryStore>,
-    gossipsub: gossipsub::Behaviour,
-    mdns: mdns::tokio::Behaviour,
+pub struct Behaviour {
+    pub request_response: request_response::cbor::Behaviour<Request, Response>,
+    pub kademlia: kad::Behaviour<kad::store::MemoryStore>,
+    pub gossipsub: gossipsub::Behaviour,
+    pub mdns: mdns::tokio::Behaviour,
 }
 
 #[derive(Debug)]
@@ -491,7 +397,7 @@ enum Command {
     },
     RespondFile {
         file: Vec<u8>,
-        channel: ResponseChannel<FileResponse>,
+        channel: ResponseChannel<Response>,
     },
     SendMessage {
         message: String,
@@ -503,12 +409,12 @@ enum Command {
 pub(crate) enum Event {
     InboundRequest {
         request: String,
-        channel: ResponseChannel<FileResponse>,
+        channel: ResponseChannel<Response>,
     },
 }
 
 // Simple file exchange protocol
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-struct FileRequest(String);
+pub struct Request(String);
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-pub(crate) struct FileResponse(Vec<u8>);
+pub struct Response(Vec<u8>);

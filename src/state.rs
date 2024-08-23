@@ -16,7 +16,11 @@ pub struct App {
     /// History of recorded messages
     pub messages: Vec<String>,
 
-    pub current_screen: Screen
+    pub current_screen: Screen,
+
+    pub username: String,
+
+    pub connected_peers: i16,
 }
 
 impl App {
@@ -26,6 +30,9 @@ impl App {
             messages: Vec::new(),
             character_index: 0,
             current_screen: Screen::LoginScreen, 
+            username: String::new(),
+            connected_peers: 0,
+
         }
     }
 
@@ -88,7 +95,12 @@ impl App {
     }
 
     pub fn submit_message(&mut self) {
-        self.messages.push(self.input.clone());
+        let final_msg = format!("{}: {}",self.username.clone(), self.input.clone() );
+        self.messages.push(final_msg);
+        self.input.clear();
+        self.reset_cursor();
+    }
+    pub fn clear_input(&mut self) {
         self.input.clear();
         self.reset_cursor();
     }
