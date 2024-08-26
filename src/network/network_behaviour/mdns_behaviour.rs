@@ -13,6 +13,7 @@ pub async fn handle_event(event: libp2p::mdns::Event, swarm: &mut Swarm<Behaviou
                     swarm.behaviour_mut().gossipsub.add_explicit_peer(&peer_id);
                     swarm.behaviour_mut().kademlia.add_address(&peer_id, multiaddr);
                     let mut app = APP.lock().unwrap();
+                    app.peers.push(peer_id);
                     app.connected_peers += 1;
                     
             }
@@ -20,7 +21,7 @@ pub async fn handle_event(event: libp2p::mdns::Event, swarm: &mut Swarm<Behaviou
 
 
         mdns::Event::Expired(list) => {
-            for (peer_id, multiaddr) in list {
+            for (peer_id, _) in list {
                 logger::info!("mDNS peer has expired: {peer_id}");
                 swarm.behaviour_mut().gossipsub.remove_explicit_peer(&peer_id);
                 let mut app = APP.lock().unwrap();

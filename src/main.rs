@@ -2,22 +2,18 @@ use std::{error::Error, io};
 
 use ratatui::{
     crossterm::{
-        event::{self, DisableMouseCapture, EnableMouseCapture, Event, KeyCode, KeyEventKind},
+        event::{DisableMouseCapture, EnableMouseCapture},
         execute,
         terminal::{disable_raw_mode, enable_raw_mode, EnterAlternateScreen, LeaveAlternateScreen},
     },
     prelude::*,
-    widgets::{Block, List, ListItem, Paragraph},
 };
 
 use tokio::task::spawn;
-use futures::prelude::*;
-use futures::StreamExt;
-use std::path::PathBuf;
 
 mod state;
 use state::APP;
-use state::Screen::MainScreen;
+use state::Screen::DMScreen;
 
 pub mod logger;
 
@@ -27,6 +23,7 @@ pub mod ui {
         pub mod help_screen;
         pub mod login_screen;
         pub mod select_room_screen;
+        pub mod dm_screen;
     }
     pub mod ui_router;
 }
@@ -40,14 +37,15 @@ pub mod network {
     pub mod network;
 }
 
-use ui::ui_router::{render, handle_events};
+use ui::screens::dm_screen::DmScreen;
+use ui::ui_router::render;
 
 
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn Error>> {
 
-    let (mut network_client, mut network_events, network_event_loop) =
+    let (mut network_client, network_event_loop) =
         network::network::new().await?;
 
     // Spawn the network task for it to run in the background.
@@ -67,20 +65,29 @@ async fn main() -> Result<(), Box<dyn Error>> {
     execute!(stdout, EnterAlternateScreen, EnableMouseCapture)?;
     let backend = CrosstermBackend::new(stdout);
     let mut terminal = Terminal::new(backend)?;
+    let mut dm_screen = DmScreen::new();
     // Log in sequence
     let mut break_loop = false;
     while !break_loop {
-        terminal.draw(|f| render(f))?;
-        break_loop = ui::ui_router::handle_events(&mut network_client).await?;
+        terminal.draw(|f| render(f, &mut dm_screen))?;
+        break_loop = ui::ui_router::handle_events(&mut network_client, &mut dm_screen).await?;
     }
     logger::info!("User has added their username");
 
-    APP.lock().unwrap().current_screen = MainScreen;
+    APP.lock().unwrap().current_screen = DMScreen;
+    
     // create app and run it
     break_loop = false;
     while !break_loop {
-        terminal.draw(|f| render(f))?;
-        break_loop = ui::ui_router::handle_events( &mut network_client).await?;
+        let mut app = APP.lock().unwrap();
+        if app.current_screen == DMScreen && app.peers.len() >= 1 {
+            // instead of handing client into render funtion send update instructions here before the render
+            app.update_usernames(&mut network_client).await;
+        }
+        drop(app);
+
+        terminal.draw(|f| render(f, &mut dm_screen))?;
+        break_loop = ui::ui_router::handle_events(&mut network_client, &mut dm_screen).await?;
     }
 
     // restore terminal
@@ -91,7 +98,7 @@ async fn main() -> Result<(), Box<dyn Error>> {
         DisableMouseCapture
     )?;
     terminal.show_cursor()?;
-
-
     Ok(())
 }
+
+

@@ -1,17 +1,17 @@
 use libp2p::{Swarm, kad, PeerId};
 use crate::logger;
 use crate::network::network::Behaviour;
-use crate::state::APP;
 use futures::channel::oneshot;
 use std::collections::{HashMap, HashSet};
+use crate::APP;
 
 
 
 pub async fn handle_event(
     event: libp2p::kad::Event,
-    swarm: &mut Swarm<Behaviour>,
-    pending_start_providing: &mut HashMap<kad::QueryId, oneshot::Sender<()>>,
-    pending_get_providers: &mut HashMap<kad::QueryId, oneshot::Sender<HashSet<PeerId>>>,
+    _swarm: &mut Swarm<Behaviour>,
+    _pending_start_providing: &mut HashMap<kad::QueryId, oneshot::Sender<()>>,
+    _pending_get_providers: &mut HashMap<kad::QueryId, oneshot::Sender<HashSet<PeerId>>>,
 ) {
     match event {
         kad::Event::OutboundQueryProgressed { result, .. } => {
@@ -27,8 +27,10 @@ pub async fn handle_event(
                                 logger::info!(
                                     "Got record {:?} {:?}", 
                                     std::str::from_utf8(key.as_ref()).unwrap(),
-                                    username,
-                                )
+                                    username.clone(),
+                                ); 
+                                let mut app = APP.lock().unwrap();
+                                app.usernames.insert(std::str::from_utf8(key.as_ref()).unwrap().to_string(), username);
                             }
                             Err(e) => {
                                 logger::error!("Error deserializing: {e:?}");
@@ -48,7 +50,7 @@ pub async fn handle_event(
                     _ => {}
                 }
             }
-            _ => {}
+            _ => {logger::info!{"huh {:?}", event}}
     }
 }
 

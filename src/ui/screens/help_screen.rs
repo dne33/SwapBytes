@@ -1,13 +1,8 @@
-use crate::state::{APP, Screen};
-use crate::network::network::Client;
+use crate::state::APP;
 use ratatui::{
-    crossterm::{
-        event::{self, DisableMouseCapture, EnableMouseCapture, Event, KeyCode, KeyEventKind},
-        execute,
-        terminal::{disable_raw_mode, enable_raw_mode, EnterAlternateScreen, LeaveAlternateScreen},
-    },
+    crossterm::event::{self, Event, KeyCode, KeyEventKind},
     prelude::*,
-    widgets::{Block, List, ListItem, Paragraph, Borders},
+    widgets::{Block, Borders},
 };
 
 pub fn render(frame: &mut Frame) {

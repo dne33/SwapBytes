@@ -1,13 +1,12 @@
-use libp2p::{Swarm, gossipsub};
+use libp2p::gossipsub;
 use crate::logger;
-use crate::network::network::Behaviour;
 use crate::state::APP;
 
 pub async fn handle_event(event: libp2p::gossipsub::Event) {
     match event {
         gossipsub::Event::Message {
             propagation_source: peer_id,
-            message_id: id,
+            message_id: _,
             message,
         } =>  {
             logger::info!("In the swarm behaviour for recieving");

@@ -6,7 +6,6 @@ use ratatui::{
     prelude::*,
     widgets::{Block, List, ListItem, Borders},
 };
-use ratatui::widgets::ListState;
 
 // Function to render the room list
 pub fn render(frame: &mut Frame) {
@@ -52,7 +51,7 @@ pub async fn handle_events() -> Result<bool, std::io::Error> {
         if key.kind == KeyEventKind::Press {
             match key.code {
                 KeyCode::Enter => {
-                    let i = match app.room_state.selected() {
+                    let _i = match app.room_state.selected() {
                         Some(i) => {
                             app.current_room = i;
                         }
