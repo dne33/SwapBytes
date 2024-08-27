@@ -74,7 +74,7 @@ async fn main() -> Result<(), Box<dyn Error>> {
     }
     logger::info!("User has added their username");
 
-    APP.lock().unwrap().current_screen = MainScreen;
+    APP.lock().unwrap().current_screen = DMScreen;
     
     // create app and run it
     break_loop = false;

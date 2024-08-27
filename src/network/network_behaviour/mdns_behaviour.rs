@@ -18,7 +18,6 @@ pub async fn handle_event(event: libp2p::mdns::Event, swarm: &mut Swarm<Behaviou
                     app.peers.push(peer_id.clone());
                     app.peers_no_username.push(peer_id.clone());
                     app.connected_peers += 1;  
-                    drop(app);
                     // Create the gossipsub topic by combining `my_peer_id` and `peer_id` alphabetically
                     // This will make it easy to send DMs to each person
                     let peer_id_str = peer_id.to_string();
@@ -36,6 +35,7 @@ pub async fn handle_event(event: libp2p::mdns::Event, swarm: &mut Swarm<Behaviou
                         logger::error!("Failed to subscribe to gossipsub topic {}: {}", topic_name.clone(), e);
                     } else {
                         logger::info!("Subscribed to gossipsub topic: {}", topic_name);
+                        app.private_messages.insert(topic_name.clone(), Vec::new());                    
                     }  
             }
         }

@@ -25,7 +25,9 @@ pub struct App {
     /// Position of cursor in the editor area.
     pub character_index: usize,
     /// History of recorded messages
-    pub messages: HashMap<String, Vec<String>>,
+    pub public_messages: HashMap<String, Vec<String>>,
+
+    pub private_messages: HashMap<String, Vec<String>>,
 
     pub current_screen: Screen,
 
@@ -49,6 +51,8 @@ pub struct App {
     pub peers_no_username: Vec<PeerId>,
 
     updating_usernames: AtomicBool, // Atomic flag to track updates
+
+    pub my_peer_id: Option<PeerId>,
 }
 
 impl App {
@@ -64,14 +68,16 @@ impl App {
         ];
 
         // Create a HashMap to store messages for each room
-        let mut messages = HashMap::new();
+        let mut public_messages = HashMap::new();
         for room in &rooms {
-            messages.insert(room.clone(), Vec::new());
+            public_messages.insert(room.clone(), Vec::new());
         }
+
 
         Self {
             input: String::new(),
-            messages,
+            public_messages,
+            private_messages: HashMap::new(),
             character_index: 0,
             current_screen: Screen::LoginScreen,
             username: String::new(),
@@ -83,6 +89,7 @@ impl App {
             usernames: HashMap::new(),
             peers_no_username: Vec::new(),
             updating_usernames: AtomicBool::new(false), // Initialize to false
+            my_peer_id: None,
         }
     }
 
@@ -144,19 +151,31 @@ impl App {
         self.character_index = 0;
     }
 
-    pub fn submit_message(&mut self) {
+    pub fn submit_public_room_message(&mut self) {
         let final_msg = format!("{}: {}",self.username.clone(), self.input.clone() );
         /// Determine the current room
         if let Some(current_room_name) = self.rooms.get(self.current_room) {
             // Push the message to the appropriate room's message vector
-            self.messages.entry(current_room_name.clone())
+            self.public_messages.entry(current_room_name.clone())
                 .or_insert_with(Vec::new)
                 .push(final_msg.clone());
         }
-        
+
         self.input.clear();
         self.reset_cursor();
     }
+
+    pub fn submit_private_message(&mut self, topic: String) {
+        let final_msg = format!("{}: {}",self.username.clone(), self.input.clone() );
+
+        // Push the message to the appropriate room's message vector
+        self.private_messages.entry(topic.clone())
+            .or_insert_with(Vec::new)
+            .push(final_msg.clone());
+        self.input.clear();
+        self.reset_cursor();
+    }
+
     pub fn clear_input(&mut self) {
         self.input.clear();
         self.reset_cursor();

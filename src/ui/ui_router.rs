@@ -30,6 +30,6 @@ pub async fn handle_events(client: &mut Client, dm_screen: &mut DmScreen) -> Res
         Screen::MainScreen => main_screen::handle_events(client).await,
         Screen::HelpScreen => help_screen::handle_events().await,
         Screen::SelectRoomScreen => select_room_screen::handle_events().await,
-        Screen::DMScreen => dm_screen.handle_events().await,
+        Screen::DMScreen => dm_screen.handle_events(client).await,
     }
 }

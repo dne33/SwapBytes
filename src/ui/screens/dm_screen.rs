@@ -13,15 +13,14 @@ use crate::network::network::Client;
 use crate::logger;
 use crate::APP;
 use std::collections::HashMap;
-use libp2p::PeerId;
+use libp2p::{gossipsub, PeerId};
 
 pub struct DmScreen {
-    pub input: String,
-    pub messages: Vec<String>,
+    pub private_messages: HashMap <String, Vec<String>>,
     pub people_state: ListState,
     pub selected_person: usize,
     pub in_sidebar: bool,
-    pub character_index: usize,
+    // pub character_index: usize,
     pub usernames: HashMap<String, String>,
     pub peers: Vec<PeerId>,
 }
@@ -31,12 +30,11 @@ impl DmScreen {
         let mut people_state = ListState::default();
         people_state.select(Some(0));
         Self {
-            input: String::new(),
-            messages: Vec::new(),
+            private_messages: HashMap::new(),
             people_state,
             selected_person: 0,
             in_sidebar: false,
-            character_index: 0,
+            // character_index: 0,
             usernames: HashMap::new(),
             peers: Vec::new(),
         }
@@ -69,34 +67,48 @@ impl DmScreen {
         } else {
             Style::default().fg(Color::Yellow)
         };
-
-        let input = Paragraph::new(self.input.as_str())
+        let mut app = APP.lock().unwrap();
+        let input = Paragraph::new(app.input.as_str())
             .style(input_style)
             .block(Block::bordered().title("Input"));
         frame.render_widget(input, input_area);
 
         if !self.in_sidebar {
             frame.set_cursor_position(Position {
-                x: input_area.x + self.character_index as u16 + 1,
+                x: input_area.x + app.character_index as u16 + 1,
                 y: input_area.y + 1,
             });
         }
+        
+        // Retrieve current user's peer ID
+        let current_user_peer_id = {
+            app.my_peer_id.as_ref().map(|id| id.to_string()).unwrap_or_default()
+        };
+        
+        // Retrieve the selected peer's ID and username
+        let selected_peer_id = peers.get(self.selected_person)
+        .map(|peer_id| peer_id.to_string())
+        .unwrap_or_default();
+        let selected_username = usernames.get(&selected_peer_id)
+            .cloned()
+            .unwrap_or_else(|| "Unknown".to_string());
 
-        // Messages area
-        let message_store: Vec<ListItem> = self
-            .messages
+        // Construct the message key using the sorted peer IDs
+        let mut peer_ids = vec![current_user_peer_id.clone(), selected_peer_id.clone()];
+        peer_ids.sort(); // Sort alphabetically
+        let message_key = peer_ids.join("_");
+
+        // Messages area with the username of the selected peer as the title\
+        let binding = vec!["Ensure a peer is connected to DM".to_string()];
+        let private_messages = app.private_messages.get(&message_key)
+            .unwrap_or(&binding)
             .iter()
             .map(|m| ListItem::new(Line::from(Span::raw(m))))
-            .collect();
-        let message_store = List::new(message_store).block(Block::bordered().title("Messages"));
+            .collect::<Vec<_>>();
+        let message_store = List::new(private_messages)
+            .block(Block::bordered().title(format!("Messages with {}", selected_username)));
         frame.render_widget(message_store, messages_area);
-
-        // let peer_items: Vec<ListItem> = self
-        //     .people
-        //     .iter()
-        //     .map(|users| ListItem::new(users.clone()))
-        //     .collect();
-        
+        self.peers = peers.clone();
         let peer_list: Vec<String> = peers.iter().map(|peer_id| format!("{}", peer_id.to_string())).collect();  
         let peer_items: Vec<ListItem> = peer_list
         .iter()
@@ -107,17 +119,18 @@ impl DmScreen {
         self.usernames = usernames.clone();
         // Sidebar (people list)
         let people_list = List::new(peer_items)
-            .block(Block::default().borders(Borders::ALL).title("People"))
-            .highlight_style(if self.in_sidebar {
-                Style::default().add_modifier(Modifier::BOLD).fg(Color::Yellow)
-            } else {
-                Style::default().add_modifier(Modifier::REVERSED)
-            })
-            .highlight_symbol(">>");
+        .block(Block::default().borders(Borders::ALL).title("People"))
+        .highlight_style(if self.in_sidebar {
+            Style::default().add_modifier(Modifier::BOLD).fg(Color::Yellow)
+        } else {
+            Style::default().add_modifier(Modifier::REVERSED)
+        })
+        .highlight_symbol(">>");
         frame.render_stateful_widget(people_list, sidebar_area, &mut self.people_state);    
+
     }
 
-    pub async fn handle_events(&mut self) -> Result<bool, std::io::Error> {
+    pub async fn handle_events(&mut self, client: &mut Client) -> Result<bool, std::io::Error> {
         if let Event::Key(key) = event::read()? {
             if key.kind == KeyEventKind::Press {
                 match key.code {
@@ -126,15 +139,36 @@ impl DmScreen {
 
                         if self.in_sidebar {
                             if let Some(peer_id) = self.select_person() {
-                                logger::info!("Selected Peer ID: {}", peer_id);
+                                logger::info!("Selected Peer ID: {:?}", peer_id);
                                 // Use the peer_id as needed here
                             }
                             self.in_sidebar = !self.in_sidebar;
                         } else {
-                            // let app = APP.lock().unwrap();
+                            let input = APP.lock().unwrap().input.clone();
                             // let message = format!("{}: {}", app.username.clone(), self.input.clone());
                             // client.submit_message(message).await;
-                            self.submit_message();
+                            let mut app = APP.lock().unwrap();
+                            let my_peer_id = match &app.my_peer_id {
+                                Some(peer_id) => peer_id.to_string(),
+                                None => "No Peer ID".to_string(), // Provide a default or placeholder
+                            };
+                            drop(app);
+                            logger::info!("peers: {:?}, selected: {:?}", self.peers.clone(), self.selected_person.clone());
+                            let peer_id = self.peers[self.selected_person].clone().to_string();
+                            // Create a topic by combining and sorting peer IDs alphabetically
+                            let mut peer_ids = vec![my_peer_id.clone(), peer_id.clone()];
+                            peer_ids.sort(); // Sort alphabetically
+
+                            let topic = gossipsub::IdentTopic::new(peer_ids.clone().join("_")); // Join with an appropriate separator
+
+                            // Send the message to the selected peer
+                            client.submit_message(input.clone(), topic.clone()).await;
+
+                            let mut app = APP.lock().unwrap();
+                            app.submit_private_message(peer_ids.join("_"));
+                            // Clear input and reset state
+                            app.input.clear();
+                            app.character_index = 0;
                         }
                     }
                     KeyCode::Char('~') => {
@@ -146,22 +180,26 @@ impl DmScreen {
                         logger::info!("Pressed a Char");
 
                         if !self.in_sidebar {
-                            self.enter_char(to_insert);
+                            let mut app = APP.lock().unwrap();
+                            app.enter_char(to_insert);
                         }
                     }
                     KeyCode::Backspace => {
                         if !self.in_sidebar {
-                            self.delete_char();
+                            let mut app = APP.lock().unwrap();
+                            app.delete_char();
                         }
                     }
                     KeyCode::Left => {
                         if !self.in_sidebar {
-                            self.move_cursor_left();
+                            let mut app = APP.lock().unwrap();
+                            app.move_cursor_left();
                         }
                     }
                     KeyCode::Right => {
                         if !self.in_sidebar {
-                            self.move_cursor_right();
+                            let mut app = APP.lock().unwrap();
+                            app.move_cursor_right();
                         }
                     }
                     KeyCode::Up => {
@@ -203,45 +241,12 @@ impl DmScreen {
         Ok(false)
     }
 
-    fn submit_message(&mut self) {
-        logger::info!("submit message");
-        self.messages.push(self.input.clone());
-        self.input.clear();
-        self.character_index = 0;
-    }
-
-    fn enter_char(&mut self, c: char) {
-        logger::info!("enter char");
-
-        self.input.push(c);
-        self.character_index += 1;
-    }
-
-    fn delete_char(&mut self) {
-        if self.character_index > 0 {
-            self.input.pop();
-            self.character_index -= 1;
-        }
-    }
-
-    fn move_cursor_left(&mut self) {
-        if self.character_index > 0 {
-            self.character_index -= 1;
-        }
-    }
-
-    fn move_cursor_right(&mut self) {
-        if self.character_index < self.input.len() {
-            self.character_index += 1;
-        }
-    }
-
-    fn select_person(&self) -> Option<String> {
+    fn select_person(&mut self) -> Option<String> {
         if let Some(selected) = self.people_state.selected() {
             if selected < self.peers.len() {
                 let peer_id = self.peers[selected].to_string();
-                logger::info!("Selected peer ID: {}", peer_id);
-                return Some(peer_id);
+                logger::info!("Selected peer ID: {:?}", peer_id);
+                self.selected_person = selected.clone();
             }
         }
         None

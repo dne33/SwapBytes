@@ -40,7 +40,7 @@ pub fn render(frame: &mut Frame) {
     let current_room_name = app.rooms.get(app.current_room);
 
     let messages: Vec<ListItem> = if let Some(room_name) = current_room_name {
-        app.messages
+        app.public_messages
             .get(room_name)
             .unwrap() // Use an empty vector if no messages are found
             .iter()
@@ -61,7 +61,7 @@ pub async fn handle_events(client: &mut Client) -> Result<bool, std::io::Error> 
                 match key.code {
                     KeyCode::Enter => {
                         let message = format!("{}: {}", app.username.clone(), app.input.clone());
-                        app.submit_message();
+                        app.submit_public_room_message();
                         let room_name = app.rooms.get(app.current_room).unwrap_or(&"global".to_string()).clone();
                         let topic = gossipsub::IdentTopic::new(room_name);
                         client.submit_message(message, topic).await;

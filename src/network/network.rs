@@ -57,13 +57,14 @@ pub(crate) async fn new() -> Result<(Client, EventLoop), Box<dyn Error>> {
         .build();
     
     let mut app = APP.lock().unwrap();
+    app.my_peer_id = Some(swarm.local_peer_id().clone());
     for room in &app.rooms {
         // Create a Gossipsub topic
         let topic = gossipsub::IdentTopic::new(room);
         // subscribes to our topic
         swarm.behaviour_mut().gossipsub.subscribe(&topic)?;
     }
-        
+    drop(app);
     swarm
         .behaviour_mut()
         .kademlia
