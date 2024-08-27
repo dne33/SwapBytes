@@ -1,10 +1,13 @@
 use crate::state::APP;
 use crate::network::network::Client;
+use libp2p::gossipsub;
 use ratatui::{
     crossterm::event::{self, Event, KeyCode, KeyEventKind},
     prelude::*,
     widgets::{Block, List, ListItem, Paragraph},
 };
+
+
 pub fn render(frame: &mut Frame) {
     let app = APP.lock().unwrap();
     let vertical = Layout::vertical([
@@ -33,11 +36,19 @@ pub fn render(frame: &mut Frame) {
         y: input_area.y + 1,
     });
 
-    let messages: Vec<ListItem> = app
-        .messages
-        .iter()
-        .map(|m| ListItem::new(Line::from(Span::raw(m))))
-        .collect();
+    // Assuming `app` is of type `App`
+    let current_room_name = app.rooms.get(app.current_room);
+
+    let messages: Vec<ListItem> = if let Some(room_name) = current_room_name {
+        app.messages
+            .get(room_name)
+            .unwrap() // Use an empty vector if no messages are found
+            .iter()
+            .map(|m| ListItem::new(Line::from(Span::raw(m))))
+            .collect()
+    } else {
+        Vec::new() // If no room is selected, return an empty vector
+    };
 
     let messages = List::new(messages).block(Block::bordered().title("Messages"));
     frame.render_widget(messages, messages_area);
@@ -50,8 +61,10 @@ pub async fn handle_events(client: &mut Client) -> Result<bool, std::io::Error> 
                 match key.code {
                     KeyCode::Enter => {
                         let message = format!("{}: {}", app.username.clone(), app.input.clone());
-                        client.submit_message(message).await;
                         app.submit_message();
+                        let room_name = app.rooms.get(app.current_room).unwrap_or(&"global".to_string()).clone();
+                        let topic = gossipsub::IdentTopic::new(room_name);
+                        client.submit_message(message, topic).await;
                     }
                     KeyCode::Char(to_insert) => {
                         app.enter_char(to_insert);

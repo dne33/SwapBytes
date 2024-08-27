@@ -25,7 +25,7 @@ pub struct App {
     /// Position of cursor in the editor area.
     pub character_index: usize,
     /// History of recorded messages
-    pub messages: Vec<String>,
+    pub messages: HashMap<String, Vec<String>>,
 
     pub current_screen: Screen,
 
@@ -56,25 +56,33 @@ impl App {
         let mut room_state = ListState::default();
         room_state.select(Some(0)); // Start with the first room selected
 
+        let rooms = vec![
+            "global".to_string(),
+            "engineering".to_string(),
+            "sciences".to_string(),
+            "arts".to_string(),
+        ];
+
+        // Create a HashMap to store messages for each room
+        let mut messages = HashMap::new();
+        for room in &rooms {
+            messages.insert(room.clone(), Vec::new());
+        }
+
         Self {
             input: String::new(),
-            messages: Vec::new(),
+            messages,
             character_index: 0,
             current_screen: Screen::LoginScreen,
             username: String::new(),
             connected_peers: 0,
-            rooms: vec![
-                "Global".to_string(),
-                "Engineering".to_string(),
-                "Sciences".to_string(),
-                "Arts".to_string(),
-            ],
+            rooms,
             room_state,
             current_room: 0,
             peers: Vec::new(),
-            usernames : HashMap::new(),
+            usernames: HashMap::new(),
             peers_no_username: Vec::new(),
-            updating_usernames: AtomicBool::new(false), // Initialize to false            
+            updating_usernames: AtomicBool::new(false), // Initialize to false
         }
     }
 
@@ -138,7 +146,14 @@ impl App {
 
     pub fn submit_message(&mut self) {
         let final_msg = format!("{}: {}",self.username.clone(), self.input.clone() );
-        self.messages.push(final_msg);
+        /// Determine the current room
+        if let Some(current_room_name) = self.rooms.get(self.current_room) {
+            // Push the message to the appropriate room's message vector
+            self.messages.entry(current_room_name.clone())
+                .or_insert_with(Vec::new)
+                .push(final_msg.clone());
+        }
+        
         self.input.clear();
         self.reset_cursor();
     }

@@ -13,7 +13,7 @@ use tokio::task::spawn;
 
 mod state;
 use state::APP;
-use state::Screen::DMScreen;
+use state::Screen::{DMScreen, MainScreen};
 
 pub mod logger;
 
@@ -74,7 +74,7 @@ async fn main() -> Result<(), Box<dyn Error>> {
     }
     logger::info!("User has added their username");
 
-    APP.lock().unwrap().current_screen = DMScreen;
+    APP.lock().unwrap().current_screen = MainScreen;
     
     // create app and run it
     break_loop = false;
