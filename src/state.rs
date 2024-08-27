@@ -6,6 +6,9 @@ use libp2p::PeerId;
 use std::collections::HashMap;
 use crate::network::network::Client;
 use crate::logger;
+
+use std::sync::atomic::{AtomicBool, Ordering};
+
 #[derive(Clone, PartialEq, Debug)]
 pub enum Screen {
     LoginScreen,
@@ -38,11 +41,14 @@ pub struct App {
 
     pub current_room: usize,
 
-    pub dm_screen: Option<DmScreen>,  
 
     pub peers: Vec<PeerId>,
 
     pub usernames: HashMap<String, String>,
+
+    pub peers_no_username: Vec<PeerId>,
+
+    updating_usernames: AtomicBool, // Atomic flag to track updates
 }
 
 impl App {
@@ -65,9 +71,10 @@ impl App {
             ],
             room_state,
             current_room: 0,
-            dm_screen: None,
             peers: Vec::new(),
             usernames : HashMap::new(),
+            peers_no_username: Vec::new(),
+            updating_usernames: AtomicBool::new(false), // Initialize to false            
         }
     }
 
@@ -141,15 +148,40 @@ impl App {
     }
 
     pub async fn update_usernames(&mut self, client: &mut Client) {
-        logger::info!("updating as {:?} != {:?}", self.usernames.len(), self.peers.len());
-        if self.usernames.len() != self.peers.len() {
-            self.usernames = HashMap::new();
+        if self.updating_usernames.load(Ordering::SeqCst) {
+            return; // An update is already in progress, so we skip
+        }
+        logger::info!("{:?}, {:?}, {:?}", self.usernames.len(), self.peers.len(), self.peers_no_username.len());
+        self.updating_usernames.store(true, Ordering::SeqCst);
+        
+
+        if self.usernames.len() > (self.peers.len() - self.peers_no_username.len()) {
+            let mut new_usernames = HashMap::new();
             for peer in &self.peers {
                 let peer_to_string = peer.to_string();
-                // if 
-                client.get_username(peer_to_string).await;
+                if let Some(username) = self.usernames.get(&peer_to_string) {
+                    new_usernames.insert(peer_to_string, username.clone());
+                }
+            }
+            self.usernames = new_usernames;
+
+        } else if self.usernames.len() < (self.peers.len() - self.peers_no_username.len()) {
+            for peer in &self.peers {
+                let peer_to_string = peer.to_string();
+                if !self.usernames.contains_key(&peer_to_string) {
+                    client.get_username(peer_to_string).await;
+                }
+            }
+        } else if self.peers_no_username.len() > 0 {
+            for peer in &self.peers {
+                let peer_to_string = peer.to_string();
+                if !self.usernames.contains_key(&peer_to_string) {
+                    client.get_username(peer_to_string).await;
+                }
             }
         }
+        self.updating_usernames.store(false, Ordering::SeqCst);
+        logger::info!("{:?}", self.usernames);
     }
 
 }

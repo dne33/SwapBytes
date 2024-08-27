@@ -13,9 +13,9 @@ pub async fn handle_event(event: libp2p::mdns::Event, swarm: &mut Swarm<Behaviou
                     swarm.behaviour_mut().gossipsub.add_explicit_peer(&peer_id);
                     swarm.behaviour_mut().kademlia.add_address(&peer_id, multiaddr);
                     let mut app = APP.lock().unwrap();
-                    app.peers.push(peer_id);
+                    app.peers.push(peer_id.clone());
+                    app.peers_no_username.push(peer_id.clone());
                     app.connected_peers += 1;
-                    
             }
         }
 

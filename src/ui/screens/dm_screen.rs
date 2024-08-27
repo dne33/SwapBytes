@@ -18,11 +18,12 @@ use libp2p::PeerId;
 pub struct DmScreen {
     pub input: String,
     pub messages: Vec<String>,
-    pub people: Vec<String>,
     pub people_state: ListState,
     pub selected_person: usize,
     pub in_sidebar: bool,
     pub character_index: usize,
+    pub usernames: HashMap<String, String>,
+    pub peers: Vec<PeerId>,
 }
 
 impl DmScreen {
@@ -32,17 +33,12 @@ impl DmScreen {
         Self {
             input: String::new(),
             messages: Vec::new(),
-            people: vec![
-                "Alice".to_string(),
-                "Bob".to_string(),
-                "Charlie".to_string(),
-                "Diana".to_string(),
-                "Eve".to_string(),
-            ],
             people_state,
             selected_person: 0,
             in_sidebar: false,
             character_index: 0,
+            usernames: HashMap::new(),
+            peers: Vec::new(),
         }
     }
 
@@ -102,15 +98,13 @@ impl DmScreen {
         //     .collect();
         
         let peer_list: Vec<String> = peers.iter().map(|peer_id| format!("{}", peer_id.to_string())).collect();  
-        logger::info!("1");
         let peer_items: Vec<ListItem> = peer_list
         .iter()
         .filter_map(|peer| {
             usernames.get(peer).map(|username| ListItem::new(format!("{}", username)))
         })
         .collect();
-        logger::info!("2");
-
+        self.usernames = usernames.clone();
         // Sidebar (people list)
         let people_list = List::new(peer_items)
             .block(Block::default().borders(Borders::ALL).title("People"))
@@ -131,12 +125,12 @@ impl DmScreen {
                         logger::info!("Enter pressed");
 
                         if self.in_sidebar {
-                            logger::info!(" Sidebar");
-
-                            self.select_person();
+                            if let Some(peer_id) = self.select_person() {
+                                logger::info!("Selected Peer ID: {}", peer_id);
+                                // Use the peer_id as needed here
+                            }
+                            self.in_sidebar = !self.in_sidebar;
                         } else {
-                            logger::info!(" Submit");
-                            
                             // let app = APP.lock().unwrap();
                             // let message = format!("{}: {}", app.username.clone(), self.input.clone());
                             // client.submit_message(message).await;
@@ -172,36 +166,33 @@ impl DmScreen {
                     }
                     KeyCode::Up => {
                         if self.in_sidebar {
-                        let i = match self.people_state.selected() {
-                            Some(i) => {
-                                if i == 0 {
-                                    self.people.len() - 1
-                                } else {
-                                    i - 1
-                                }
+                            let user_count = self.usernames.len();
+                            if user_count > 0 {
+                                let i = match self.people_state.selected() {
+                                    Some(0) => user_count - 1, // Wrap to the last user
+                                    Some(i) => i - 1,
+                                    None => 0,
+                                };
+                                self.people_state.select(Some(i));
                             }
-                            None => 0,
-                        };
-                            self.people_state.select(Some(i));
+
                         }
-             
                     }
+
                     KeyCode::Down => {
                         if self.in_sidebar {
-                            let i = match self.people_state.selected() {
-                                Some(i) => {
-                                    if i >= self.people.len() - 1 {
-                                        0
-                                    } else {
-                                        i + 1
-                                    }
-                                }
-                                None => 0,
-                            };
-                            self.people_state.select(Some(i));
+                            let user_count = self.usernames.len();
+                            if user_count > 0 {
+                                let i = match self.people_state.selected() {
+                                    Some(i) if i >= user_count - 1 => 0, // Wrap to the first user
+                                    Some(i) => i + 1,
+                                    None => 0,
+                                };
+                                self.people_state.select(Some(i));
+                            }
                         }
-                        
                     }
+
                     KeyCode::Esc => {
                         return Ok(true);
                     }
@@ -245,7 +236,14 @@ impl DmScreen {
         }
     }
 
-    fn select_person(&self) {
-        // Implement what should happen when a person is selected
+    fn select_person(&self) -> Option<String> {
+        if let Some(selected) = self.people_state.selected() {
+            if selected < self.peers.len() {
+                let peer_id = self.peers[selected].to_string();
+                logger::info!("Selected peer ID: {}", peer_id);
+                return Some(peer_id);
+            }
+        }
+        None
     }
 }

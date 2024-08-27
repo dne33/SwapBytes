@@ -258,11 +258,17 @@ impl EventLoop {
                 self.swarm.behaviour_mut().gossipsub.remove_explicit_peer(&peer_id);
                 let mut app = APP.lock().unwrap();
                 app.connected_peers -= 1;
-
-                // Remove item from a list (https://stackoverflow.com/questions/26243025/how-to-remove-an-element-from-a-vector-given-the-element)
-                let index = app.peers.iter().position(|x| *x == peer_id).unwrap();
-                app.peers.remove(index);
                 
+                // Remove item from a list (https://stackoverflow.com/questions/26243025/how-to-remove-an-element-from-a-vector-given-the-element)
+                if app.peers.iter().any(|x| *x == peer_id) {
+                    let index = app.peers.iter().position(|x| *x == peer_id).unwrap();
+                    app.peers.remove(index);
+                }
+                    
+                if app.peers_no_username.contains(&peer_id) {
+                    let index = app.peers_no_username.iter().position(|x| *x == peer_id).unwrap();
+                    app.peers_no_username.remove(index);
+                }
             },
             
             SwarmEvent::Behaviour(BehaviourEvent::Kademlia(event)) => {
@@ -386,6 +392,7 @@ impl EventLoop {
                     .put_record(record, kad::Quorum::One)
                     .expect("Failed to store record locally");
                 logger::info!("No errors in storing username");
+
             }
             Command::GetUsername { peer_id } => {
                 // Get's a username based on a peer_id, ensuring it is added to the "app.username" hashmap for use throughout the app

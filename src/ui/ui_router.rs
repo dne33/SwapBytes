@@ -21,7 +21,7 @@ pub fn render(frame: &mut Frame, dm_screen: &mut DmScreen) {
 }
 
 pub async fn handle_events(client: &mut Client, dm_screen: &mut DmScreen) -> Result<bool, std::io::Error> {
-    let (current_screen) = {
+    let current_screen = {
         let app = APP.lock().unwrap();
         app.current_screen.clone()    
     };

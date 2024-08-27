@@ -31,6 +31,10 @@ pub async fn handle_event(
                                 ); 
                                 let mut app = APP.lock().unwrap();
                                 app.usernames.insert(std::str::from_utf8(key.as_ref()).unwrap().to_string(), username);
+                                if app.peers_no_username.len() != 0 && app.peers_no_username.iter().any(|&i| i.to_string() == std::str::from_utf8(key.as_ref()).unwrap().to_string()) {
+                                    let index = app.peers_no_username.iter().position(|x| *x.to_string() == std::str::from_utf8(key.as_ref()).unwrap().to_string()).unwrap();
+                                    app.peers_no_username.remove(index);
+                                }
                             }
                             Err(e) => {
                                 logger::error!("Error deserializing: {e:?}");
