@@ -20,6 +20,7 @@ use std::time::Duration;
 use crate::network::network_behaviour::{mdns_behaviour, gossipsub_behaviour, kademlia_behaviour, request_response_behaviour};
 use crate::state::APP;
 use crate::logger;
+use libp2p_request_response::ResponseChannel;
 
 
 pub(crate) async fn new() -> Result<(Client, EventLoop), Box<dyn Error>> {
@@ -113,6 +114,29 @@ impl Client {
         .expect("Message Sent.");
         logger::info!("message sent: {:?}", message.clone());
 
+    }
+
+    pub(crate) async fn send_request(
+        &mut self,
+        request: String,
+        peer: PeerId
+    ) {
+        self.sender
+            .send(Command::RequestFile { request, peer })
+            .await
+            .expect("Command receiver not to be dropped.");
+    }
+
+    pub(crate) async fn send_response(
+        &mut self,
+        filename: String,
+        filepath: String,
+        channel: ResponseChannel<Response>
+    ) {
+        self.sender
+            .send(Command::RespondFile { filename, filepath, channel })
+            .await
+            .expect("Command receiver not to be dropped.");
     }
 
     pub(crate) async fn push_username(
@@ -259,64 +283,23 @@ impl EventLoop {
                     Err(e) => sender.send(Err(Box::new(e))),
                 };
             }
-            // Command::Dial {
-            //     peer_id,
-            //     peer_addr,
-            //     sender,
-            // } => {
-            //     if let hash_map::Entry::Vacant(e) = self.pending_dial.entry(peer_id) {
-            //         self.swarm
-            //             .behaviour_mut()
-            //             .kademlia
-            //             .add_address(&peer_id, peer_addr.clone());
-            //         match self.swarm.dial(peer_addr.with(Protocol::P2p(peer_id))) {
-            //             Ok(()) => {
-            //                 e.insert(sender);
-            //             }
-            //             Err(e) => {
-            //                 let _ = sender.send(Err(Box::new(e)));
-            //             }
-            //         }
-            //     } else {
-            //         todo!("Already dialing peer.");
-            //     }
-            // }
-            // Command::StartProviding { file_name, sender } => {
-            //     let query_id = self
-            //         .swarm
-            //         .behaviour_mut()
-            //         .kademlia
-            //         .start_providing(file_name.into_bytes().into())
-            //         .expect("No store error.");
-            //     self.pending_start_providing.insert(query_id, sender);
-            // }
-            // Command::GetProviders { file_name, sender } => {
-            //     let query_id = self
-            //         .swarm
-            //         .behaviour_mut()
-            //         .kademlia
-            //         .get_providers(file_name.into_bytes().into());
-            //     self.pending_get_providers.insert(query_id, sender);
-            // }
-            // Command::RequestFile {
-            //     file_name,
-            //     peer,
-            //     sender,
-            // } => {
-            //     let request_id = self
-            //         .swarm
-            //         .behaviour_mut()
-            //         .request_response
-            //         .send_request(&peer, Request(file_name));
-            //     self.pending_request_file.insert(request_id, sender);
-            // }
-            // Command::RespondFile { file, channel } => {
-            //     self.swarm
-            //         .behaviour_mut()
-            //         .request_response
-            //         .send_response(channel, Response(file))
-            //         .expect("Connection to peer to be still open.");
-            // }
+            Command::RequestFile { request, peer, } => {
+                self
+                    .swarm
+                    .behaviour_mut()
+                    .request_response
+                    .send_request(&peer, Request { request });
+            }
+            Command::RespondFile { filename, filepath, channel } => {
+                let data = std::fs::read(&filepath).unwrap_or_else(|_| Vec::new());
+                
+                log::info!("Data provided is empty: {:?}", data.is_empty());
+                self.swarm
+                    .behaviour_mut()
+                    .request_response
+                    .send_response(channel, Response {filename, data })
+                    .expect("Connection to peer to be still open.");
+            }
             Command::PushUsername { username } => {
                 logger::info!("Attempting to add username");
                 let serial_username = serde_cbor::to_vec(&username).unwrap();
@@ -358,28 +341,15 @@ enum Command {
         addr: Multiaddr,
         sender: oneshot::Sender<Result<(), Box<dyn Error + Send>>>,
     },
-    // Dial {
-    //     peer_id: PeerId,
-    //     peer_addr: Multiaddr,
-    //     sender: oneshot::Sender<Result<(), Box<dyn Error + Send>>>,
-    // },
-    // StartProviding {
-    //     file_name: String,
-    //     sender: oneshot::Sender<()>,
-    // },
-    // GetProviders {
-    //     file_name: String,
-    //     sender: oneshot::Sender<HashSet<PeerId>>,
-    // },
-    // RequestFile {
-    //     file_name: String,
-    //     peer: PeerId,
-    //     sender: oneshot::Sender<Result<Vec<u8>, Box<dyn Error + Send>>>,
-    // },
-    // RespondFile {
-    //     file: Vec<u8>,
-    //     channel: ResponseChannel<Response>,
-    // },
+    RequestFile {
+        request: String,
+        peer: PeerId,
+    },
+    RespondFile {
+        filename: String,
+        filepath: String,
+        channel: ResponseChannel<Response>
+    },
     SendMessage {
         message: String,
         topic: IdentTopic,
@@ -392,16 +362,14 @@ enum Command {
     },
 }
 
-// #[derive(Debug)]
-// pub(crate) enum Event {
-//     InboundRequest {
-//         request: String,
-//         channel: ResponseChannel<Response>,
-//     },
-// }
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct Request {
+    pub request: String,
+}
 
-// Simple file exchange protocol
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-pub struct Request(String);
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-pub struct Response(Vec<u8>);
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct Response {
+    pub filename: String,
+    pub data: Vec<u8>,
+}

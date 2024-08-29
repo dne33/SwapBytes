@@ -18,9 +18,11 @@ use libp2p::{gossipsub, PeerId};
 pub struct DmScreen {
     pub private_messages: HashMap <String, Vec<String>>,
     pub people_state: ListState,
+    pub request_state: ListState,
+
     pub selected_person: usize,
     pub in_sidebar: bool,
-    // pub character_index: usize,
+    pub in_requests: bool,
     pub usernames: HashMap<String, String>,
     pub peers: Vec<PeerId>,
 }
@@ -29,12 +31,15 @@ impl DmScreen {
     pub fn new() -> Self {
         let mut people_state = ListState::default();
         people_state.select(Some(0));
+        let mut request_state = ListState::default();
+        request_state.select(Some(0));
         Self {
             private_messages: HashMap::new(),
             people_state,
+            request_state,
             selected_person: 0,
             in_sidebar: false,
-            // character_index: 0,
+            in_requests: false,
             usernames: HashMap::new(),
             peers: Vec::new(),
         }
@@ -54,6 +59,13 @@ impl DmScreen {
             Constraint::Min(1),
         ]);
         let [help_area, input_area, messages_area] = vertical.areas(main_area);
+        
+        let vertical_sidebar = Layout::vertical([
+            Constraint::Percentage(60),
+            Constraint::Percentage(40),
+        ]);
+
+        let [peer_area, request_area] = vertical_sidebar.areas(sidebar_area);
 
         // Help message
         let (msg, style) = (vec!["SwapBytes ".bold()], Style::default());
@@ -62,7 +74,7 @@ impl DmScreen {
         frame.render_widget(help_message, help_area);
 
         // Input area
-        let input_style = if self.in_sidebar {
+        let input_style = if self.in_sidebar || self.in_requests {
             Style::default().fg(Color::DarkGray)
         } else {
             Style::default().fg(Color::Yellow)
@@ -73,7 +85,7 @@ impl DmScreen {
             .block(Block::bordered().title("Input"));
         frame.render_widget(input, input_area);
 
-        if !self.in_sidebar {
+        if !self.in_sidebar && !self.in_requests {
             frame.set_cursor_position(Position {
                 x: input_area.x + app.character_index as u16 + 1,
                 y: input_area.y + 1,
@@ -116,18 +128,46 @@ impl DmScreen {
             usernames.get(peer).map(|username| ListItem::new(format!("{}", username)))
         })
         .collect();
-        self.usernames = usernames.clone();
-        // Sidebar (people list)
-        let people_list = List::new(peer_items)
-        .block(Block::default().borders(Borders::ALL).title("People"))
-        .highlight_style(if self.in_sidebar {
-            Style::default().add_modifier(Modifier::BOLD).fg(Color::Yellow)
-        } else {
-            Style::default().add_modifier(Modifier::REVERSED)
-        })
-        .highlight_symbol(">>");
-        frame.render_stateful_widget(people_list, sidebar_area, &mut self.people_state);    
+        
 
+
+        // Sidebar (people list)
+        let people_style = if !self.in_sidebar {
+            Style::default().fg(Color::DarkGray)
+        } else {
+            Style::default().fg(Color::Yellow)
+        };
+        let people_list = List::new(peer_items)
+            .block(Block::default().borders(Borders::ALL).title("People"))
+            .style(people_style)
+            // .style()
+            .highlight_style(if self.in_sidebar {
+                Style::default().add_modifier(Modifier::BOLD).fg(Color::Yellow)
+            } else {
+                Style::default().add_modifier(Modifier::REVERSED)
+            })
+            .highlight_symbol(">>");
+        frame.render_stateful_widget(people_list, peer_area, &mut self.people_state);    
+
+        let current_requests = &app.current_requests;
+        self.usernames = usernames.clone();
+        let request_items: Vec<String> = current_requests.iter().map(|request| format!("{} - {}", self.usernames.get(&request.peer_id.to_string()).expect(""), request.request_string)).collect();  
+        let request_style = if !self.in_requests {
+            Style::default().fg(Color::DarkGray)
+        } else {
+            Style::default().fg(Color::Yellow)
+        };
+        let requests = List::new(request_items.into_iter().map(ListItem::new).collect::<Vec<_>>())
+            .block(Block::default().borders(Borders::ALL).title("Incoming Requests"))
+            .style(request_style)
+            .highlight_style(if self.in_requests {
+                Style::default().add_modifier(Modifier::BOLD).fg(Color::Yellow)
+            } else {
+                Style::default().add_modifier(Modifier::REVERSED)
+            })
+            .highlight_symbol(">>");
+
+        frame.render_stateful_widget(requests, request_area, &mut self.request_state);
     }
 
     pub async fn handle_events(&mut self, client: &mut Client) -> Result<bool, std::io::Error> {
@@ -143,38 +183,69 @@ impl DmScreen {
                                 // Use the peer_id as needed here
                             }
                             self.in_sidebar = !self.in_sidebar;
-                        } else {
-                            let input = APP.lock().unwrap().input.clone();
-                            // let message = format!("{}: {}", app.username.clone(), self.input.clone());
-                            // client.submit_message(message).await;
+                        } else if self.in_requests {
                             let mut app = APP.lock().unwrap();
-                            let my_peer_id = match &app.my_peer_id {
-                                Some(peer_id) => peer_id.to_string(),
-                                None => "No Peer ID".to_string(), // Provide a default or placeholder
-                            };
-                            drop(app);
-                            logger::info!("peers: {:?}, selected: {:?}", self.peers.clone(), self.selected_person.clone());
-                            let peer_id = self.peers[self.selected_person].clone().to_string();
-                            // Create a topic by combining and sorting peer IDs alphabetically
-                            let mut peer_ids = vec![my_peer_id.clone(), peer_id.clone()];
-                            peer_ids.sort(); // Sort alphabetically
+                            logger::info!("Sending File Response");
+                            logger::info!("{:?}", self.request_state.clone());
 
-                            let topic = gossipsub::IdentTopic::new(peer_ids.clone().join("_")); // Join with an appropriate separator
-
-                            // Send the message to the selected peer
-                            client.submit_message(input.clone(), topic.clone()).await;
-
-                            let mut app = APP.lock().unwrap();
-                            app.submit_private_message(peer_ids.join("_"));
-                            // Clear input and reset state
+                            let index = self.request_state.clone().selected().expect("");
+                            let request = app.current_requests.remove(index);
+                            let channel = request.response_channel; // Move the channel out
+                            let input = request.request_string;
+                            
+                            client.send_response(input.clone(), input.clone(), channel).await;
                             app.input.clear();
                             app.character_index = 0;
+                        } else {
+                            let input = APP.lock().unwrap().input.clone();
+                            
+                            if input.len() != 0 && !input.starts_with("!request file") {
+                                let mut app = APP.lock().unwrap();
+                                let my_peer_id = match &app.my_peer_id {
+                                    Some(peer_id) => peer_id.to_string(),
+                                    None => "No Peer ID".to_string(), // Provide a default or placeholder
+                                };
+                                drop(app);
+                                logger::info!("peers: {:?}, selected: {:?}", self.peers.clone(), self.selected_person.clone());
+                                let peer_id = self.peers[self.selected_person].clone().to_string();
+                                // Create a topic by combining and sorting peer IDs alphabetically
+                                let mut peer_ids = vec![my_peer_id.clone(), peer_id.clone()];
+                                peer_ids.sort(); // Sort alphabetically
+
+                                let topic = gossipsub::IdentTopic::new(peer_ids.clone().join("_")); // Join with an appropriate separator
+
+                                // Send the message to the selected peer
+                                client.submit_message(input.clone(), topic.clone()).await;
+
+                                let mut app = APP.lock().unwrap();
+                                app.submit_private_message(peer_ids.join("_"));
+                                // Clear input and reset state
+                                app.input.clear();
+                                app.character_index = 0;
+                            } else if input.starts_with("!request file") {
+                                let mut app = APP.lock().unwrap();
+                                log::info!("Sending File Request");
+                                let input_clone = app.input.clone();
+                                let file: Vec<_> = input_clone.split(" ").collect();
+                                let peer_id = self.peers[self.selected_person].clone();
+                                client.send_request(file.get(file.len()-1).expect("").to_string(), peer_id).await;
+                                app.input.clear();
+                                app.character_index = 0;
+                            } 
+
                         }
                     }
                     KeyCode::Char('~') => {
                         logger::info!("Tilda");
 
-                        self.in_sidebar = !self.in_sidebar;
+                        if self.in_sidebar {
+                            self.in_sidebar = false;
+                            self.in_requests = true;
+                        } else if self.in_requests {
+                            self.in_requests = false;
+                        } else {
+                            self.in_sidebar = true;
+                        }
                     }
                     KeyCode::Char(to_insert) => {
                         logger::info!("Pressed a Char");
@@ -213,7 +284,17 @@ impl DmScreen {
                                 };
                                 self.people_state.select(Some(i));
                             }
-
+                        } else if self.in_requests {
+                            // Logic for moving up in the request list
+                            let request_count = APP.lock().unwrap().current_requests.len();
+                            if request_count > 0 {
+                                let i = match self.request_state.selected() {
+                                    Some(0) => request_count - 1, // Wrap to the last request
+                                    Some(i) => i - 1,
+                                    None => 0,
+                                };
+                                self.request_state.select(Some(i));
+                            }
                         }
                     }
 
@@ -227,6 +308,17 @@ impl DmScreen {
                                     None => 0,
                                 };
                                 self.people_state.select(Some(i));
+                            }
+                        } else if self.in_requests {
+                            let request_count = APP.lock().unwrap().current_requests.len();
+                            // Logic for moving down in the request list
+                            if request_count > 0 {
+                                let i = match self.request_state.selected() {
+                                    Some(i) if i >= request_count - 1 => 0, // Wrap to the first request
+                                    Some(i) => i + 1,
+                                    None => 0,
+                                };
+                                self.request_state.select(Some(i));
                             }
                         }
                     }

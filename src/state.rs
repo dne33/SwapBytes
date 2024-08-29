@@ -4,7 +4,8 @@ use ratatui::widgets::ListState;
 use crate::ui::screens::dm_screen::DmScreen;
 use libp2p::PeerId;
 use std::collections::HashMap;
-use crate::network::network::Client;
+use crate::network::network::{Response, Client};
+use libp2p_request_response::ResponseChannel;
 use crate::logger;
 
 use std::sync::atomic::{AtomicBool, Ordering};
@@ -53,6 +54,9 @@ pub struct App {
     updating_usernames: AtomicBool, // Atomic flag to track updates
 
     pub my_peer_id: Option<PeerId>,
+
+    pub current_requests: Vec<Request_Item>,
+
 }
 
 impl App {
@@ -90,6 +94,7 @@ impl App {
             peers_no_username: Vec::new(),
             updating_usernames: AtomicBool::new(false), // Initialize to false
             my_peer_id: None,
+            current_requests: Vec::new(),
         }
     }
 
@@ -218,6 +223,12 @@ impl App {
         logger::info!("{:?}", self.usernames);
     }
 
+}
+
+pub struct Request_Item {
+    pub peer_id: PeerId,
+    pub request_string: String,
+    pub response_channel: ResponseChannel<Response>,
 }
 
 lazy_static! {
