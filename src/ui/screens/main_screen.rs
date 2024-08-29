@@ -2,20 +2,20 @@ use crate::state::APP;
 use crate::network::network::Client;
 use libp2p::gossipsub;
 use ratatui::{
-    crossterm::event::{self, Event, KeyCode, KeyEventKind},
+    crossterm::event::{self, Event, KeyCode, KeyEventKind, KeyEvent},
     prelude::*,
     widgets::{Block, List, ListItem, Paragraph},
 };
+use std::rc::Rc;
 
-
-pub fn render(frame: &mut Frame) {
+pub fn render(frame: &mut Frame, chunk: Rc<[ratatui::layout::Rect]>) {
     let app = APP.lock().unwrap();
     let vertical = Layout::vertical([
         Constraint::Length(1),
         Constraint::Length(3),
         Constraint::Min(1),
     ]);
-    let [help_area, input_area, messages_area] = vertical.areas(frame.area());
+    let [help_area, input_area, messages_area] = vertical.areas(chunk[1]);
 
     let (msg, style) = (
         vec!["SwapBytes ".bold()],
@@ -54,38 +54,35 @@ pub fn render(frame: &mut Frame) {
     frame.render_widget(messages, messages_area);
 }
 
-pub async fn handle_events(client: &mut Client) -> Result<bool, std::io::Error> {
+pub async fn handle_events(client: &mut Client, key: KeyEvent) -> Result<bool, std::io::Error> {
     let mut app = APP.lock().unwrap();
-    if let Event::Key(key) = event::read()? {
-            if key.kind == KeyEventKind::Press {
-                match key.code {
-                    KeyCode::Enter => {
-                        let message = format!("{}: {}", app.username.clone(), app.input.clone());
-                        app.submit_public_room_message();
-                        let room_name = app.rooms.get(app.current_room).unwrap_or(&"global".to_string()).clone();
-                        let topic = gossipsub::IdentTopic::new(room_name);
-                        client.submit_message(message, topic).await;
-                    }
-                    KeyCode::Char(to_insert) => {
-                        app.enter_char(to_insert);
-                    }
-                    KeyCode::Backspace => {
-                        app.delete_char();
-                    }
-                    KeyCode::Left => {
-                        app.move_cursor_left();
-                    }
-                    KeyCode::Right => {
-                        app.move_cursor_right();
-                    },
-                    KeyCode::Tab => {
-                    },
-                    KeyCode::Esc => {
-                        return Ok(true);
-                    }
-                    _ => {}
-                }
-            }
+    match key.code {
+        KeyCode::Enter => {
+            let message = format!("{}: {}", app.username.clone(), app.input.clone());
+            app.submit_public_room_message();
+            let room_name = app.rooms.get(app.current_room).unwrap_or(&"global".to_string()).clone();
+            let topic = gossipsub::IdentTopic::new(room_name);
+            client.submit_message(message, topic).await;
         }
-        Ok(false)
+        KeyCode::Char(to_insert) => {
+            app.enter_char(to_insert);
+        }
+        KeyCode::Backspace => {
+            app.delete_char();
+        }
+        KeyCode::Left => {
+            app.move_cursor_left();
+        }
+        KeyCode::Right => {
+            app.move_cursor_right();
+        },
+        KeyCode::Tab => {
+        },
+        KeyCode::Esc => {
+            return Ok(true);
+        }
+        _ => {}
+    }
+        
+    Ok(false)
 }

@@ -1,10 +1,11 @@
 use crate::state::APP;
 use crate::network::network::Client;
 use ratatui::{
-    crossterm::event::{self, Event, KeyCode, KeyEventKind},
+    crossterm::event::{self, Event, KeyCode, KeyEventKind, KeyEvent},
     prelude::*,
     widgets::{Block, Paragraph},
 };
+use std::rc::Rc;
 
 pub fn render(frame: &mut Frame) {
     
@@ -42,38 +43,34 @@ pub fn render(frame: &mut Frame) {
     
 }
 
-pub async fn handle_events(client: &mut Client) -> Result<bool, std::io::Error> {
+pub async fn handle_events(client: &mut Client, key: KeyEvent) -> Result<bool, std::io::Error> {
     let mut app = APP.lock().unwrap();
-    if let Event::Key(key) = event::read()? {
-            if key.kind == KeyEventKind::Press {
-                match key.code {
-                    KeyCode::Enter => {
-                        
-                        if !app.input.clone().is_empty() && app.connected_peers > 0 {
-                            app.username = app.input.clone();
-                            client.push_username(app.input.clone()).await;
-                            app.clear_input();
-                            return Ok(true);
-                        }
-                        
-                    }
-                    KeyCode::Char(to_insert) => {
-                        app.enter_char(to_insert);
-                    }
-                    KeyCode::Backspace => {
-                        app.delete_char();
-                    }
-                    KeyCode::Left => {
-                        app.move_cursor_left();
-                    }
-                    KeyCode::Right => {
-                        app.move_cursor_right();
-                    },
-                    KeyCode::Tab => {
-                    },
-                    _ => {}
-                }
+    match key.code {
+        KeyCode::Enter => {
+            
+            if !app.input.clone().is_empty() && app.connected_peers > 0 {
+                app.username = app.input.clone();
+                client.push_username(app.input.clone()).await;
+                app.clear_input();
+                return Ok(true);
             }
+            
         }
-        Ok(false)   
+        KeyCode::Char(to_insert) => {
+            app.enter_char(to_insert);
+        }
+        KeyCode::Backspace => {
+            app.delete_char();
+        }
+        KeyCode::Left => {
+            app.move_cursor_left();
+        }
+        KeyCode::Right => {
+            app.move_cursor_right();
+        },
+        KeyCode::Tab => {
+        },
+        _ => {}
+    }
+    Ok(false)   
 }

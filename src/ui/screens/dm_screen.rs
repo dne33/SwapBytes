@@ -7,13 +7,14 @@ use ratatui::{
     Frame,
     prelude::*,
     widgets::{List, ListItem, Paragraph, ListState, Block, Borders},
-    crossterm::event::{self, Event, KeyCode, KeyEventKind},
+    crossterm::event::{self, Event, KeyCode, KeyEventKind, KeyEvent},
 };
 use crate::network::network::Client;
 use crate::logger;
 use crate::APP;
 use std::collections::HashMap;
 use libp2p::{gossipsub, PeerId};
+use std::rc::Rc;
 
 pub struct DmScreen {
     pub private_messages: HashMap <String, Vec<String>>,
@@ -45,13 +46,13 @@ impl DmScreen {
         }
     }
 
-    pub fn render(&mut self, frame: &mut Frame, usernames: HashMap<String, String>, peers: Vec<PeerId>) {
+    pub fn render(&mut self, frame: &mut Frame,  chunk: Rc<[ratatui::layout::Rect]>, usernames: HashMap<String, String>, peers: Vec<PeerId>) {
         let people = 0;
         let horizontal = Layout::horizontal([
             Constraint::Length(30),
             Constraint::Min(1),
         ]);
-        let [sidebar_area, main_area] = horizontal.areas(frame.area());
+        let [sidebar_area, main_area] = horizontal.areas(chunk[1]);
 
         let vertical = Layout::vertical([
             Constraint::Length(1),
@@ -170,166 +171,163 @@ impl DmScreen {
         frame.render_stateful_widget(requests, request_area, &mut self.request_state);
     }
 
-    pub async fn handle_events(&mut self, client: &mut Client) -> Result<bool, std::io::Error> {
-        if let Event::Key(key) = event::read()? {
-            if key.kind == KeyEventKind::Press {
-                match key.code {
-                    KeyCode::Enter => {
-                        logger::info!("Enter pressed");
+    pub async fn handle_events(&mut self, client: &mut Client, key: KeyEvent) -> Result<bool, std::io::Error> {
+        match key.code {
+            KeyCode::Enter => {
+                logger::info!("Enter pressed");
 
-                        if self.in_sidebar {
-                            if let Some(peer_id) = self.select_person() {
-                                logger::info!("Selected Peer ID: {:?}", peer_id);
-                                // Use the peer_id as needed here
-                            }
-                            self.in_sidebar = !self.in_sidebar;
-                        } else if self.in_requests {
-                            let mut app = APP.lock().unwrap();
-                            logger::info!("Sending File Response");
-                            logger::info!("{:?}", self.request_state.clone());
-
-                            let index = self.request_state.clone().selected().expect("");
-                            let request = app.current_requests.remove(index);
-                            let channel = request.response_channel; // Move the channel out
-                            let input = request.request_string;
-                            
-                            client.send_response(input.clone(), input.clone(), channel).await;
-                            app.input.clear();
-                            app.character_index = 0;
-                        } else {
-                            let input = APP.lock().unwrap().input.clone();
-                            
-                            if input.len() != 0 && !input.starts_with("!request file") {
-                                let mut app = APP.lock().unwrap();
-                                let my_peer_id = match &app.my_peer_id {
-                                    Some(peer_id) => peer_id.to_string(),
-                                    None => "No Peer ID".to_string(), // Provide a default or placeholder
-                                };
-                                drop(app);
-                                logger::info!("peers: {:?}, selected: {:?}", self.peers.clone(), self.selected_person.clone());
-                                let peer_id = self.peers[self.selected_person].clone().to_string();
-                                // Create a topic by combining and sorting peer IDs alphabetically
-                                let mut peer_ids = vec![my_peer_id.clone(), peer_id.clone()];
-                                peer_ids.sort(); // Sort alphabetically
-
-                                let topic = gossipsub::IdentTopic::new(peer_ids.clone().join("_")); // Join with an appropriate separator
-
-                                // Send the message to the selected peer
-                                client.submit_message(input.clone(), topic.clone()).await;
-
-                                let mut app = APP.lock().unwrap();
-                                app.submit_private_message(peer_ids.join("_"));
-                                // Clear input and reset state
-                                app.input.clear();
-                                app.character_index = 0;
-                            } else if input.starts_with("!request file") {
-                                let mut app = APP.lock().unwrap();
-                                log::info!("Sending File Request");
-                                let input_clone = app.input.clone();
-                                let file: Vec<_> = input_clone.split(" ").collect();
-                                let peer_id = self.peers[self.selected_person].clone();
-                                client.send_request(file.get(file.len()-1).expect("").to_string(), peer_id).await;
-                                app.input.clear();
-                                app.character_index = 0;
-                            } 
-
-                        }
+                if self.in_sidebar {
+                    if let Some(peer_id) = self.select_person() {
+                        logger::info!("Selected Peer ID: {:?}", peer_id);
+                        // Use the peer_id as needed here
                     }
-                    KeyCode::Char('~') => {
-                        logger::info!("Tilda");
+                    self.in_sidebar = !self.in_sidebar;
+                } else if self.in_requests {
+                    let mut app = APP.lock().unwrap();
+                    logger::info!("Sending File Response");
+                    logger::info!("{:?}", self.request_state.clone());
 
-                        if self.in_sidebar {
-                            self.in_sidebar = false;
-                            self.in_requests = true;
-                        } else if self.in_requests {
-                            self.in_requests = false;
-                        } else {
-                            self.in_sidebar = true;
-                        }
-                    }
-                    KeyCode::Char(to_insert) => {
-                        logger::info!("Pressed a Char");
+                    let index = self.request_state.clone().selected().expect("");
+                    let request = app.current_requests.remove(index);
+                    let channel = request.response_channel; // Move the channel out
+                    let input = request.request_string;
+                    
+                    client.send_response(input.clone(), input.clone(), channel).await;
+                    app.input.clear();
+                    app.character_index = 0;
+                } else {
+                    let input = APP.lock().unwrap().input.clone();
+                    
+                    if input.len() != 0 && !input.starts_with("!request file") {
+                        let mut app = APP.lock().unwrap();
+                        let my_peer_id = match &app.my_peer_id {
+                            Some(peer_id) => peer_id.to_string(),
+                            None => "No Peer ID".to_string(), // Provide a default or placeholder
+                        };
+                        drop(app);
+                        logger::info!("peers: {:?}, selected: {:?}", self.peers.clone(), self.selected_person.clone());
+                        let peer_id = self.peers[self.selected_person].clone().to_string();
+                        // Create a topic by combining and sorting peer IDs alphabetically
+                        let mut peer_ids = vec![my_peer_id.clone(), peer_id.clone()];
+                        peer_ids.sort(); // Sort alphabetically
 
-                        if !self.in_sidebar {
-                            let mut app = APP.lock().unwrap();
-                            app.enter_char(to_insert);
-                        }
-                    }
-                    KeyCode::Backspace => {
-                        if !self.in_sidebar {
-                            let mut app = APP.lock().unwrap();
-                            app.delete_char();
-                        }
-                    }
-                    KeyCode::Left => {
-                        if !self.in_sidebar {
-                            let mut app = APP.lock().unwrap();
-                            app.move_cursor_left();
-                        }
-                    }
-                    KeyCode::Right => {
-                        if !self.in_sidebar {
-                            let mut app = APP.lock().unwrap();
-                            app.move_cursor_right();
-                        }
-                    }
-                    KeyCode::Up => {
-                        if self.in_sidebar {
-                            let user_count = self.usernames.len();
-                            if user_count > 0 {
-                                let i = match self.people_state.selected() {
-                                    Some(0) => user_count - 1, // Wrap to the last user
-                                    Some(i) => i - 1,
-                                    None => 0,
-                                };
-                                self.people_state.select(Some(i));
-                            }
-                        } else if self.in_requests {
-                            // Logic for moving up in the request list
-                            let request_count = APP.lock().unwrap().current_requests.len();
-                            if request_count > 0 {
-                                let i = match self.request_state.selected() {
-                                    Some(0) => request_count - 1, // Wrap to the last request
-                                    Some(i) => i - 1,
-                                    None => 0,
-                                };
-                                self.request_state.select(Some(i));
-                            }
-                        }
-                    }
+                        let topic = gossipsub::IdentTopic::new(peer_ids.clone().join("_")); // Join with an appropriate separator
 
-                    KeyCode::Down => {
-                        if self.in_sidebar {
-                            let user_count = self.usernames.len();
-                            if user_count > 0 {
-                                let i = match self.people_state.selected() {
-                                    Some(i) if i >= user_count - 1 => 0, // Wrap to the first user
-                                    Some(i) => i + 1,
-                                    None => 0,
-                                };
-                                self.people_state.select(Some(i));
-                            }
-                        } else if self.in_requests {
-                            let request_count = APP.lock().unwrap().current_requests.len();
-                            // Logic for moving down in the request list
-                            if request_count > 0 {
-                                let i = match self.request_state.selected() {
-                                    Some(i) if i >= request_count - 1 => 0, // Wrap to the first request
-                                    Some(i) => i + 1,
-                                    None => 0,
-                                };
-                                self.request_state.select(Some(i));
-                            }
-                        }
-                    }
+                        // Send the message to the selected peer
+                        client.submit_message(input.clone(), topic.clone()).await;
 
-                    KeyCode::Esc => {
-                        return Ok(true);
-                    }
-                    e => {logger::error!("{:?}", e)}
+                        let mut app = APP.lock().unwrap();
+                        app.submit_private_message(peer_ids.join("_"));
+                        // Clear input and reset state
+                        app.input.clear();
+                        app.character_index = 0;
+                    } else if input.starts_with("!request file") {
+                        let mut app = APP.lock().unwrap();
+                        log::info!("Sending File Request");
+                        let input_clone = app.input.clone();
+                        let file: Vec<_> = input_clone.split(" ").collect();
+                        let peer_id = self.peers[self.selected_person].clone();
+                        client.send_request(file.get(file.len()-1).expect("").to_string(), peer_id).await;
+                        app.input.clear();
+                        app.character_index = 0;
+                    } 
+
                 }
             }
+            KeyCode::Char('~') => {
+                logger::info!("Tilda");
+
+                if self.in_sidebar {
+                    self.in_sidebar = false;
+                    self.in_requests = true;
+                } else if self.in_requests {
+                    self.in_requests = false;
+                } else {
+                    self.in_sidebar = true;
+                }
+            }
+            KeyCode::Char(to_insert) => {
+                logger::info!("Pressed a Char");
+
+                if !self.in_sidebar {
+                    let mut app = APP.lock().unwrap();
+                    app.enter_char(to_insert);
+                }
+            }
+            KeyCode::Backspace => {
+                if !self.in_sidebar {
+                    let mut app = APP.lock().unwrap();
+                    app.delete_char();
+                }
+            }
+            KeyCode::Left => {
+                if !self.in_sidebar {
+                    let mut app = APP.lock().unwrap();
+                    app.move_cursor_left();
+                }
+            }
+            KeyCode::Right => {
+                if !self.in_sidebar {
+                    let mut app = APP.lock().unwrap();
+                    app.move_cursor_right();
+                }
+            }
+            KeyCode::Up => {
+                if self.in_sidebar {
+                    let user_count = self.usernames.len();
+                    if user_count > 0 {
+                        let i = match self.people_state.selected() {
+                            Some(0) => user_count - 1, // Wrap to the last user
+                            Some(i) => i - 1,
+                            None => 0,
+                        };
+                        self.people_state.select(Some(i));
+                    }
+                } else if self.in_requests {
+                    // Logic for moving up in the request list
+                    let request_count = APP.lock().unwrap().current_requests.len();
+                    if request_count > 0 {
+                        let i = match self.request_state.selected() {
+                            Some(0) => request_count - 1, // Wrap to the last request
+                            Some(i) => i - 1,
+                            None => 0,
+                        };
+                        self.request_state.select(Some(i));
+                    }
+                }
+            }
+
+            KeyCode::Down => {
+                if self.in_sidebar {
+                    let user_count = self.usernames.len();
+                    if user_count > 0 {
+                        let i = match self.people_state.selected() {
+                            Some(i) if i >= user_count - 1 => 0, // Wrap to the first user
+                            Some(i) => i + 1,
+                            None => 0,
+                        };
+                        self.people_state.select(Some(i));
+                    }
+                } else if self.in_requests {
+                    let request_count = APP.lock().unwrap().current_requests.len();
+                    // Logic for moving down in the request list
+                    if request_count > 0 {
+                        let i = match self.request_state.selected() {
+                            Some(i) if i >= request_count - 1 => 0, // Wrap to the first request
+                            Some(i) => i + 1,
+                            None => 0,
+                        };
+                        self.request_state.select(Some(i));
+                    }
+                }
+            }
+
+            KeyCode::Esc => {
+                return Ok(true);
+            }
+            e => {logger::error!("{:?}", e)}
         }
+        
         Ok(false)
     }
 
