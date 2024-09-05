@@ -44,7 +44,6 @@ pub struct App {
 
     pub current_room: usize,
 
-
     pub peers: Vec<PeerId>,
 
     pub usernames: HashMap<String, String>,
@@ -56,7 +55,6 @@ pub struct App {
     pub my_peer_id: Option<PeerId>,
 
     pub current_requests: Vec<Request_Item>,
-
 }
 
 impl App {

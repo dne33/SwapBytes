@@ -15,7 +15,7 @@ pub async fn handle_event(event: libp2p::gossipsub::Event) {
             
             let topic_name = message.topic.as_str();
 
-            let final_msg = format!("{msg} from {peer_id} on topic {topic_name}");
+            let final_msg = format!("{msg}");
             
             let mut app = APP.lock().unwrap();
             

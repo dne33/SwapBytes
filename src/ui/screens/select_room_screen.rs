@@ -5,6 +5,7 @@ use ratatui::{
     widgets::{Block, List, ListItem, Borders},
 };
 use std::rc::Rc;
+use crate::state::Screen::MainScreen;
 
 // Function to render the room list
 pub fn render(frame: &mut Frame,  chunk: Rc<[ratatui::layout::Rect]>) {
@@ -13,7 +14,6 @@ pub fn render(frame: &mut Frame,  chunk: Rc<[ratatui::layout::Rect]>) {
     // Define the layout for the rooms
     let rooms_area = Layout::default()
         .direction(Direction::Vertical)
-        .margin(2)
         .constraints([Constraint::Min(1)])
         .split(chunk[1]);
 
@@ -50,6 +50,7 @@ pub async fn handle_events(key: KeyEvent) -> Result<bool, std::io::Error> {
             let _i = match app.room_state.selected() {
                 Some(i) => {
                     app.current_room = i;
+                    app.current_screen = MainScreen;
                 }
                 None => {},
             };

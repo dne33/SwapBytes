@@ -49,8 +49,8 @@ pub fn render(frame: &mut Frame, dm_screen: &mut DmScreen) {
         .direction(Direction::Vertical)
         .constraints(
             [
-                Constraint::Percentage(15),
-                Constraint::Percentage(85),   // Remaining space for the screen content
+                Constraint::Percentage(5),
+                Constraint::Percentage(95),   // Remaining space for the screen content
             ].as_ref(),
         )
         .split(frame.size());

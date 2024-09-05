@@ -21,6 +21,8 @@ use crate::network::network_behaviour::{mdns_behaviour, gossipsub_behaviour, kad
 use crate::state::APP;
 use crate::logger;
 use libp2p_request_response::ResponseChannel;
+use libp2p::kad::store::{MemoryStore, RecordStore};
+
 
 
 pub(crate) async fn new() -> Result<(Client, EventLoop), Box<dyn Error>> {
@@ -151,7 +153,7 @@ impl Client {
             .expect("username Pushed.");
     }
 
-    pub(crate) async fn get_username(
+     pub(crate) async fn get_username(
         &mut self,
         peer_id: String,
     ) {
@@ -162,16 +164,32 @@ impl Client {
             .await
             .expect("username got.");
     }
+
+    pub(crate) async fn get_rooms(
+        &mut self,
+    ) {
+        self.sender
+            .send(Command::GetRooms { })
+            .await
+            .expect("Rooms got.");
+    }
+
+    pub(crate) async fn create_room(
+        &mut self,
+        chat_name: String,
+    ) {
+        logger::info!("Creating Chat room: {:?}", chat_name.clone());
+
+        self.sender
+            .send(Command::CreateRoom { chat_name })
+            .await
+            .expect("Room Created.");
+    }
 }
 
 pub(crate) struct EventLoop {
     swarm: Swarm<Behaviour>,
     command_receiver: mpsc::Receiver<Command>,
-    pending_dial: HashMap<PeerId, oneshot::Sender<Result<(), Box<dyn Error + Send>>>>,
-    pending_start_providing: HashMap<kad::QueryId, oneshot::Sender<()>>,
-    pending_get_providers: HashMap<kad::QueryId, oneshot::Sender<HashSet<PeerId>>>,
-    // pending_request_file:
-    //     HashMap<OutboundRequestId, oneshot::Sender<Result<Vec<u8>, Box<dyn Error + Send>>>>,
 }
 
 impl EventLoop {
@@ -182,11 +200,6 @@ impl EventLoop {
         Self {
             swarm,
             command_receiver,
-            // event_sender,
-            pending_dial: Default::default(),
-            pending_start_providing: Default::default(),
-            pending_get_providers: Default::default(),
-            // pending_request_file: Default::default(),
         }
     }
 
@@ -203,8 +216,6 @@ impl EventLoop {
     }
 
     async fn handle_event(&mut self, event: SwarmEvent<BehaviourEvent>) {
-        logger::info!("Event happened {:?}", event);
-        
         match event {
             SwarmEvent::Behaviour(BehaviourEvent::Gossipsub(event)) => {
                 gossipsub_behaviour::handle_event(event).await;
@@ -214,7 +225,10 @@ impl EventLoop {
             SwarmEvent::Behaviour(BehaviourEvent::Mdns(event)) => {
                 mdns_behaviour::handle_event(event, &mut self.swarm).await;
             },
-            
+
+            SwarmEvent::Behaviour(BehaviourEvent::Kademlia(event)) => {
+                kademlia_behaviour::handle_event(event, &mut self.swarm).await;
+            },
            
             SwarmEvent::ConnectionClosed { peer_id, .. } => {
                 logger::info!("Connection closed for peer: {peer_id}");
@@ -234,9 +248,7 @@ impl EventLoop {
                 }
             },
             
-            SwarmEvent::Behaviour(BehaviourEvent::Kademlia(event)) => {
-                kademlia_behaviour::handle_event(event, &mut self.swarm, &mut self.pending_start_providing, &mut self.pending_get_providers).await;
-            },
+           
 
             SwarmEvent::Behaviour(BehaviourEvent::RequestResponse(event)) => {
                 request_response_behaviour::handle_event(event).await;
@@ -247,25 +259,7 @@ impl EventLoop {
                 let peer_id = self.swarm.local_peer_id().clone();
                 self.swarm.behaviour_mut().kademlia.add_address(&peer_id, address);
             },
-            
-            SwarmEvent::ConnectionEstablished {
-                peer_id, endpoint, ..
-            } => {
-                if endpoint.is_dialer() {
-                    if let Some(sender) = self.pending_dial.remove(&peer_id) {
-                        let _ = sender.send(Ok(()));
-                    }
-                }
-            },
-            SwarmEvent::OutgoingConnectionError { peer_id, error, .. } => {
-                if let Some(peer_id) = peer_id {
-                    if let Some(sender) = self.pending_dial.remove(&peer_id) {
-                        let _ = sender.send(Err(Box::new(error)));
-                    }
-                }
-            },
-            SwarmEvent::IncomingConnection { .. } => {},
-            SwarmEvent::IncomingConnectionError { .. } => {},
+        
             e => logger::error!("{e:?}"),
         }
     }
@@ -300,6 +294,12 @@ impl EventLoop {
                     .send_response(channel, Response {filename, data })
                     .expect("Connection to peer to be still open.");
             }
+            Command::GetUsername { peer_id } => {
+                // Get's a username based on a peer_id, ensuring it is added to the "app.username" hashmap for use throughout the app
+                logger::info!("Getting username");
+                let key = kad::RecordKey::new(&peer_id);
+                self.swarm.behaviour_mut().kademlia.get_record(key);
+            }
             Command::PushUsername { username } => {
                 logger::info!("Attempting to add username");
                 let serial_username = serde_cbor::to_vec(&username).unwrap();
@@ -316,11 +316,55 @@ impl EventLoop {
                 logger::info!("No errors in storing username");
 
             }
-            Command::GetUsername { peer_id } => {
-                // Get's a username based on a peer_id, ensuring it is added to the "app.username" hashmap for use throughout the app
-                logger::info!("Getting username");
-                let key = kad::RecordKey::new(&peer_id);
+            Command::GetRooms {  } => {
+                let key = kad::RecordKey::new(&"room_store".to_string());
                 self.swarm.behaviour_mut().kademlia.get_record(key);
+            }
+            Command::CreateRoom { chat_name } => {
+                // Get's a username based on a peer_id, ensuring it is added to the "app.username" hashmap for use throughout the app
+                logger::info!("Creating Room");
+                let serial_chat_name = serde_cbor::to_vec(&"room_store").unwrap();
+                let key = kad::RecordKey::new(&"room_store".to_string());
+                let record = self.swarm.behaviour_mut().kademlia.store_mut().get(&key);
+
+                if !record.is_none() {
+                    let mut room_store: Vec<String> = match serde_cbor::from_slice(&record.unwrap().value) {
+                        Ok(room_store) => room_store,
+                        Err(e) => {
+                            logger::info!("Failed to deserialize room list: {:?}", e);
+                            return;
+                        }
+                    };
+                    if !room_store.contains(&chat_name.clone()) {
+                         room_store.push(chat_name.clone());
+                        let rooms_bytes = serde_cbor::to_vec(&room_store).unwrap();
+                        let record = kad::Record {
+                            key: kad::RecordKey::new(&key),
+                            value: rooms_bytes,
+                            publisher: None,
+                            expires: None,
+                        };
+                        self.swarm.behaviour_mut().kademlia.put_record(record, kad::Quorum::One).expect("Failed to store record locally");
+                        logger::info!("No errors in storing room name");
+                    } else {
+                        logger::info!("Room Store already contains: {:?}", chat_name.clone());
+                    }
+                } else {
+                    let mut room_store = Vec::new();
+                    room_store.push(chat_name.clone());
+                    let rooms_bytes = serde_cbor::to_vec(&room_store).unwrap();
+    
+                    let record = kad::Record {
+                        key: kad::RecordKey::new(&key),
+                        value: rooms_bytes,
+                        publisher: None,
+                        expires: None,
+                    };
+
+                    self.swarm.behaviour_mut().kademlia.put_record(record, kad::Quorum::One).expect("Failed to store record locally");
+                    logger::info!("No errors in storing room name");
+                }
+                
             }
         
         }
@@ -359,6 +403,10 @@ enum Command {
     },
     GetUsername {
         peer_id: String
+    },
+    GetRooms {},
+    CreateRoom {
+        chat_name: String
     },
 }
 

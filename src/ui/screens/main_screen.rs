@@ -7,24 +7,15 @@ use ratatui::{
     widgets::{Block, List, ListItem, Paragraph},
 };
 use std::rc::Rc;
+use crate::logger;
 
 pub fn render(frame: &mut Frame, chunk: Rc<[ratatui::layout::Rect]>) {
     let app = APP.lock().unwrap();
     let vertical = Layout::vertical([
-        Constraint::Length(1),
         Constraint::Length(3),
         Constraint::Min(1),
     ]);
-    let [help_area, input_area, messages_area] = vertical.areas(chunk[1]);
-
-    let (msg, style) = (
-        vec!["SwapBytes ".bold()],
-        Style::default(),
-    );
-
-    let text = Text::from(Line::from(msg)).patch_style(style);
-    let help_message = Paragraph::new(text);
-    frame.render_widget(help_message, help_area);
+    let [input_area, messages_area] = vertical.areas(chunk[1]);
 
     let input = Paragraph::new(app.input.as_str())
         .style(Style::default().fg(Color::Yellow))
@@ -36,7 +27,6 @@ pub fn render(frame: &mut Frame, chunk: Rc<[ratatui::layout::Rect]>) {
         y: input_area.y + 1,
     });
 
-    // Assuming `app` is of type `App`
     let current_room_name = app.rooms.get(app.current_room);
 
     let messages: Vec<ListItem> = if let Some(room_name) = current_room_name {
@@ -50,7 +40,8 @@ pub fn render(frame: &mut Frame, chunk: Rc<[ratatui::layout::Rect]>) {
         Vec::new() // If no room is selected, return an empty vector
     };
 
-    let messages = List::new(messages).block(Block::bordered().title("Messages"));
+    let current_room = &app.rooms[app.current_room];
+    let messages = List::new(messages).block(Block::bordered().title(format!("Current Room: {}", current_room)));
     frame.render_widget(messages, messages_area);
 }
 
@@ -58,11 +49,25 @@ pub async fn handle_events(client: &mut Client, key: KeyEvent) -> Result<bool, s
     let mut app = APP.lock().unwrap();
     match key.code {
         KeyCode::Enter => {
-            let message = format!("{}: {}", app.username.clone(), app.input.clone());
-            app.submit_public_room_message();
-            let room_name = app.rooms.get(app.current_room).unwrap_or(&"global".to_string()).clone();
-            let topic = gossipsub::IdentTopic::new(room_name);
-            client.submit_message(message, topic).await;
+            if app.input.clone().starts_with("!create room ") {
+                let chat_name: &str = &app.input.clone()[13..app.input.clone().len()];
+                logger::info!("Attempting to create room: {}", chat_name.clone());
+                let chat_name_len = chat_name.len();
+                if chat_name_len <= 64 && chat_name_len > 0 {
+                    client.create_room(chat_name.to_string()).await;
+                    app.input.clear();
+                    app.character_index = 0;
+                } else {
+                    logger::info!("Failed to add chat room name, name too long")
+                }
+            } else {
+                let message = format!("{}: {}", app.username.clone(), app.input.clone());
+                app.submit_public_room_message();
+                let room_name = app.rooms.get(app.current_room).unwrap_or(&"global".to_string()).clone();
+                let topic = gossipsub::IdentTopic::new(room_name);
+                client.submit_message(message, topic).await;
+            }
+            
         }
         KeyCode::Char(to_insert) => {
             app.enter_char(to_insert);
