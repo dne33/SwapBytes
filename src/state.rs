@@ -1,7 +1,6 @@
 use lazy_static::lazy_static;
 use std::sync::{Mutex, Arc};
 use ratatui::widgets::ListState;
-use crate::ui::screens::dm_screen::DmScreen;
 use libp2p::PeerId;
 use std::collections::HashMap;
 use crate::network::network::{Response, Client};
@@ -14,7 +13,6 @@ use std::sync::atomic::{AtomicBool, Ordering};
 pub enum Screen {
     LoginScreen,
     MainScreen,
-    HelpScreen,
     SelectRoomScreen,
     DMScreen,
 }
@@ -54,7 +52,7 @@ pub struct App {
 
     pub my_peer_id: Option<PeerId>,
 
-    pub current_requests: Vec<Request_Item>,
+    pub current_requests: Vec<RequestItem>,
 }
 
 impl App {
@@ -156,7 +154,7 @@ impl App {
 
     pub fn submit_public_room_message(&mut self) {
         let final_msg = format!("{}: {}",self.username.clone(), self.input.clone() );
-        /// Determine the current room
+        // Determine the current room
         if let Some(current_room_name) = self.rooms.get(self.current_room) {
             // Push the message to the appropriate room's message vector
             self.public_messages.entry(current_room_name.clone())
@@ -223,7 +221,7 @@ impl App {
 
 }
 
-pub struct Request_Item {
+pub struct RequestItem {
     pub peer_id: PeerId,
     pub request_string: String,
     pub response_channel: ResponseChannel<Response>,

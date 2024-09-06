@@ -1,6 +1,6 @@
 use crate::state::APP; // Adjust the import to your actual application state location
 use ratatui::{
-    crossterm::event::{self, Event, KeyCode, KeyEventKind, KeyEvent},
+    crossterm::event::{KeyCode, KeyEvent},
     prelude::*,
     widgets::{Block, List, ListItem, Borders},
 };

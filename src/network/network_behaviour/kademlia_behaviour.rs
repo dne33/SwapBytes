@@ -1,8 +1,7 @@
-use libp2p::{Swarm, kad, PeerId};
+use libp2p::{Swarm, kad};
 use crate::logger;
 use crate::network::network::Behaviour;
-use futures::channel::oneshot;
-use std::collections::{HashMap, HashSet};
+use std::collections::HashSet;
 use libp2p::gossipsub::IdentTopic;
 
 use crate::APP;

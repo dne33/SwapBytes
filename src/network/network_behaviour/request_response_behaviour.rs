@@ -1,8 +1,7 @@
-use libp2p::{Swarm, request_response};
+use libp2p::request_response;
 use libp2p_request_response::Message;
 use crate::logger;
-use crate::network::network::Behaviour;
-use crate::state::{APP, Request_Item};
+use crate::state::{APP, RequestItem};
 use crate::network::network::{Request, Response};
 
 
@@ -11,19 +10,19 @@ pub async fn handle_event(event: libp2p::request_response::Event<Request, Respon
     match event {
 
         request_response::Event::InboundFailure { error, ..} => {
-            log::info!("Inbound Error {error}")
+            logger::info!("Inbound Error {error}")
         }
 
         request_response::Event::OutboundFailure { error, ..} => {
-            log::info!("Outbound failiure {error}");
+            logger::info!("Outbound failiure {error}");
         }
 
         request_response::Event::Message { peer, message } => {
             match message {
                 Message::Request { request, channel, .. } => {
-                    log::info!("Received request: {:?}", request);
+                    logger::info!("Received request: {:?}", request);
                     let mut app = APP.lock().unwrap();
-                    let new_request = Request_Item {
+                    let new_request = RequestItem {
                         peer_id: peer,
                         request_string: request.request,
                         response_channel: channel,
@@ -32,12 +31,12 @@ pub async fn handle_event(event: libp2p::request_response::Event<Request, Respon
                 },
 
                 Message::Response { response, .. } => {
-                    log::info!("Received response: {:?}", response);
+                    logger::info!("Received response: {:?}", response);
 
                     if let Err(e) = std::fs::write("new_".to_owned() + &response.filename, response.data) {
-                        log::error!("Error writing: {:?} Error: {:?}", &response.filename, e);
+                        logger::error!("Error writing: {:?} Error: {:?}", &response.filename, e);
                     } else {
-                        log::info!("File {:?} received and saved successfully", &response.filename);
+                        logger::info!("File {:?} received and saved successfully", &response.filename);
                     }
                 },
             }

@@ -14,14 +14,13 @@ use libp2p::{
 use libp2p::gossipsub::IdentTopic;
 use libp2p::StreamProtocol;
 use serde::{Deserialize, Serialize};
-use std::collections::{HashMap, HashSet};
 use std::error::Error;
 use std::time::Duration;
 use crate::network::network_behaviour::{mdns_behaviour, gossipsub_behaviour, kademlia_behaviour, request_response_behaviour};
 use crate::state::APP;
 use crate::logger;
 use libp2p_request_response::ResponseChannel;
-use libp2p::kad::store::{MemoryStore, RecordStore};
+use libp2p::kad::store::RecordStore;
 
 
 
@@ -291,7 +290,7 @@ impl EventLoop {
                 self.swarm
                     .behaviour_mut()
                     .request_response
-                    .send_response(channel, Response {filename, data })
+                    .send_response(channel, Response { filename, data })
                     .expect("Connection to peer to be still open.");
             }
             Command::GetUsername { peer_id } => {
@@ -323,7 +322,6 @@ impl EventLoop {
             Command::CreateRoom { chat_name } => {
                 // Get's a username based on a peer_id, ensuring it is added to the "app.username" hashmap for use throughout the app
                 logger::info!("Creating Room");
-                let serial_chat_name = serde_cbor::to_vec(&"room_store").unwrap();
                 let key = kad::RecordKey::new(&"room_store".to_string());
                 let record = self.swarm.behaviour_mut().kademlia.store_mut().get(&key);
 

@@ -1,12 +1,11 @@
 use simplelog::*;
 use std::fs::{File, rename};
 use std::path::{Path, PathBuf};
-use std::io::Error;
 
 pub fn initialize() {
     let log_file_path = "Logs/app.log";
     let backup_log_file_prefix = "Logs/app_backup";
-    let mut backup_log_file_path = PathBuf::from(log_file_path);
+    let mut backup_log_file_path;
 
     // Check if the log file already exists
     if Path::new(log_file_path).exists() {

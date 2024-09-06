@@ -2,7 +2,7 @@ use crate::state::APP;
 use crate::network::network::Client;
 use libp2p::gossipsub;
 use ratatui::{
-    crossterm::event::{self, Event, KeyCode, KeyEventKind, KeyEvent},
+    crossterm::event::{KeyCode, KeyEvent},
     prelude::*,
     widgets::{Block, List, ListItem, Paragraph},
 };
@@ -51,7 +51,7 @@ pub async fn handle_events(client: &mut Client, key: KeyEvent) -> Result<bool, s
         KeyCode::Enter => {
             if app.input.clone().starts_with("!create room ") {
                 let chat_name: &str = &app.input.clone()[13..app.input.clone().len()];
-                logger::info!("Attempting to create room: {}", chat_name.clone());
+                logger::info!("Attempting to create room: {}", chat_name);
                 let chat_name_len = chat_name.len();
                 if chat_name_len <= 64 && chat_name_len > 0 {
                     client.create_room(chat_name.to_string()).await;

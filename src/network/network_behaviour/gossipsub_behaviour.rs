@@ -5,9 +5,8 @@ use crate::state::APP;
 pub async fn handle_event(event: libp2p::gossipsub::Event) {
     match event {
         gossipsub::Event::Message {
-            propagation_source: peer_id,
-            message_id: _,
             message,
+            ..
         } =>  {
             logger::info!("In the swarm behaviour for receiving");
         
@@ -20,7 +19,7 @@ pub async fn handle_event(event: libp2p::gossipsub::Event) {
             let mut app = APP.lock().unwrap();
             
             // Check length as room names are restricted to 64 chars
-            if topic_name.clone().to_string().len() <= 64 {
+            if topic_name.to_string().len() <= 64 {
                 // Insert the message into the appropriate room vector based on the topic
                 app.public_messages.entry(topic_name.to_string())
                                 .or_insert_with(Vec::new)

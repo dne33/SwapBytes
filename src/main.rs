@@ -18,7 +18,6 @@ pub mod logger;
 pub mod ui {
     pub mod screens {
         pub mod main_screen;
-        pub mod help_screen;
         pub mod login_screen;
         pub mod select_room_screen;
         pub mod dm_screen;
@@ -37,7 +36,7 @@ pub mod network {
 
 use ui::screens::dm_screen::DmScreen;
 use ui::ui_router::render;
-use network::network::{Client, EventLoop};
+use network::network::Client;
 
 /**
  * Sets up the terminal by enabling raw mode, switching to the alternate screen,
@@ -72,7 +71,7 @@ fn restore_terminal(
 /**
  * Initializes the network by creating a client and starting the event loop in a background task.
  */
-async fn init_network() -> Result<(Client), Box<dyn Error>> {
+async fn init_network() -> Result<Client, Box<dyn Error>> {
     let (mut network_client, network_event_loop) = network::network::new().await?;
     spawn(network_event_loop.run());
     network_client

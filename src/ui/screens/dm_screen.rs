@@ -1,13 +1,10 @@
-// dm_screen.rs
-
 use ratatui::{
     style::{Modifier, Style, Color},
-    text::{Line, Span, Text},
+    text::{Line, Span},
     layout::{Constraint, Layout, Position},
     Frame,
-    prelude::*,
     widgets::{List, ListItem, Paragraph, ListState, Block, Borders},
-    crossterm::event::{self, Event, KeyCode, KeyEventKind, KeyEvent},
+    crossterm::event::{KeyCode, KeyEvent},
 };
 use crate::network::network::Client;
 use crate::logger;
@@ -47,7 +44,6 @@ impl DmScreen {
     }
 
     pub fn render(&mut self, frame: &mut Frame,  chunk: Rc<[ratatui::layout::Rect]>, usernames: HashMap<String, String>, peers: Vec<PeerId>) {
-        let people = 0;
         let horizontal = Layout::horizontal([
             Constraint::Length(30),
             Constraint::Min(1),
@@ -55,11 +51,10 @@ impl DmScreen {
         let [sidebar_area, main_area] = horizontal.areas(chunk[1]);
 
         let vertical = Layout::vertical([
-            Constraint::Length(1),
             Constraint::Length(3),
             Constraint::Min(1),
         ]);
-        let [help_area, input_area, messages_area] = vertical.areas(main_area);
+        let [input_area, messages_area] = vertical.areas(main_area);
         
         let vertical_sidebar = Layout::vertical([
             Constraint::Percentage(60),
@@ -68,19 +63,13 @@ impl DmScreen {
 
         let [peer_area, request_area] = vertical_sidebar.areas(sidebar_area);
 
-        // Help message
-        let (msg, style) = (vec!["SwapBytes ".bold()], Style::default());
-        let text = Text::from(Line::from(msg)).patch_style(style);
-        let help_message = Paragraph::new(text);
-        frame.render_widget(help_message, help_area);
-
         // Input area
         let input_style = if self.in_sidebar || self.in_requests {
             Style::default().fg(Color::DarkGray)
         } else {
             Style::default().fg(Color::Yellow)
         };
-        let mut app = APP.lock().unwrap();
+        let app = APP.lock().unwrap();
         let input = Paragraph::new(app.input.as_str())
             .style(input_style)
             .block(Block::bordered().title("Input"));
@@ -199,7 +188,7 @@ impl DmScreen {
                     let input = APP.lock().unwrap().input.clone();
                     
                     if input.len() != 0 && !input.starts_with("!request file") {
-                        let mut app = APP.lock().unwrap();
+                        let app = APP.lock().unwrap();
                         let my_peer_id = match &app.my_peer_id {
                             Some(peer_id) => peer_id.to_string(),
                             None => "No Peer ID".to_string(), // Provide a default or placeholder
