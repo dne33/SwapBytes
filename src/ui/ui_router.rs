@@ -14,6 +14,9 @@ use ratatui::{
     crossterm::event::{self, Event, KeyCode, KeyEventKind},
 };
 
+/// Renders the tab bar with the current screen highlighted.
+///
+/// Displays tabs for Main, Select Room, and DM screens, highlighting the current screen.
 fn render_tabs(frame: &mut Frame, area: Rect, current_screen: &Screen) {
     let tab_titles = vec![
         Span::raw("Main"),
@@ -35,6 +38,9 @@ fn render_tabs(frame: &mut Frame, area: Rect, current_screen: &Screen) {
     frame.render_widget(tabs, area);
 }
 
+/// Renders the current screen content based on the application state.
+///
+/// Displays the appropriate screen content based on `current_screen` and updates `dm_screen` with the latest data.
 pub fn render(frame: &mut Frame, dm_screen: &mut DmScreen) {
     let (current_screen, peers, usernames) = {
         let app = APP.lock().unwrap();
@@ -65,6 +71,9 @@ pub fn render(frame: &mut Frame, dm_screen: &mut DmScreen) {
     }
 }
 
+/// Handles keyboard events for screen navigation and interaction.
+///
+/// Updates the current screen based on Tab key presses and delegates event handling to the appropriate screen module.
 pub async fn handle_events(client: &mut Client, dm_screen: &mut DmScreen) -> Result<bool, std::io::Error> {
     let current_screen = {
         let app = APP.lock().unwrap();
@@ -102,7 +111,7 @@ pub async fn handle_events(client: &mut Client, dm_screen: &mut DmScreen) -> Res
                 Screen::SelectRoomScreen => select_room_screen::handle_events(key).await,
                 Screen::DMScreen => dm_screen.handle_events(client, key).await,
             };
-            return result
+            return result;
         }
     }
     Ok(false)

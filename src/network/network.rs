@@ -9,7 +9,7 @@ use libp2p::{
     request_response::{self, ProtocolSupport},
     swarm::{NetworkBehaviour, Swarm, SwarmEvent},
     tcp, yamux, PeerId,
-    gossipsub, mdns, 
+    gossipsub, mdns,
 };
 use libp2p::gossipsub::IdentTopic;
 use libp2p::StreamProtocol;
@@ -22,8 +22,10 @@ use crate::logger;
 use libp2p_request_response::ResponseChannel;
 use libp2p::kad::store::RecordStore;
 
-
-
+/// Initializes a new network instance and sets up a Swarm with various network behaviours.
+///
+/// Configures the Swarm with TCP and QUIC transports, encryption, and multiplexing. Sets up Gossipsub for pub/sub messaging,
+/// MDNS for peer discovery, and Kademlia for distributed hash table operations. Subscribes to Gossipsub topics for rooms.
 pub(crate) async fn new() -> Result<(Client, EventLoop), Box<dyn Error>> {
     let mut swarm = libp2p::SwarmBuilder::with_new_identity()
         .with_tokio()
@@ -46,12 +48,13 @@ pub(crate) async fn new() -> Result<(Client, EventLoop), Box<dyn Error>> {
                 request_response::Config::default(),
             );
             
-            // build a gossipsub network behaviour
+            // Build a Gossipsub network behaviour
             let gossipsub = gossipsub::Behaviour::new(
                 gossipsub::MessageAuthenticity::Signed(key.clone()),
                 gossipsub::Config::default(),
             )?;
 
+            // Build an MDNS behaviour for peer discovery
             let mdns = mdns::tokio::Behaviour::new(mdns::Config::default(), key.public().to_peer_id())?;
             Ok(Behaviour { kademlia, request_response, gossipsub, mdns })
         })?
@@ -61,9 +64,8 @@ pub(crate) async fn new() -> Result<(Client, EventLoop), Box<dyn Error>> {
     let mut app = APP.lock().unwrap();
     app.my_peer_id = Some(swarm.local_peer_id().clone());
     for room in &app.rooms {
-        // Create a Gossipsub topic
+        // Create a Gossipsub topic for each room and subscribe to it
         let topic = gossipsub::IdentTopic::new(room);
-        // subscribes to our topic
         swarm.behaviour_mut().gossipsub.subscribe(&topic)?;
     }
     drop(app);
@@ -73,7 +75,6 @@ pub(crate) async fn new() -> Result<(Client, EventLoop), Box<dyn Error>> {
         .set_mode(Some(kad::Mode::Server));
 
     let (command_sender, command_receiver) = mpsc::channel(0);
-    // let (event_sender, _) = mpsc::channel(0);
 
     Ok((
         Client {
@@ -83,13 +84,16 @@ pub(crate) async fn new() -> Result<(Client, EventLoop), Box<dyn Error>> {
     ))
 }
 
+/// Represents a client that can send commands to the network.
 #[derive(Clone)]
 pub struct Client {
     sender: mpsc::Sender<Command>,
 }
 
 impl Client {
-    /// Listen for incoming connections on the given address.
+    /// Starts listening on the specified address.
+    ///
+    /// Sends a command to start listening and waits for confirmation.
     pub(crate) async fn start_listening(
         &mut self,
         addr: Multiaddr,
@@ -102,21 +106,25 @@ impl Client {
         receiver.await.expect("Sender not to be dropped.")
     }
 
+    /// Submits a message to the specified Gossipsub topic.
+    ///
+    /// Sends a message to a topic, which will be published to all subscribers.
     pub(crate) async fn submit_message(
         &mut self,
         message: String,
         topic: IdentTopic,
     ) {
         logger::info!("Submitting message: {:?}", message.clone());
-        // Provide a default room name or handle the case where the room is not found
         self.sender
-        .send(Command::SendMessage { message: message.clone(), topic})
-        .await
-        .expect("Message Sent.");
+            .send(Command::SendMessage { message: message.clone(), topic })
+            .await
+            .expect("Message Sent.");
         logger::info!("message sent: {:?}", message.clone());
-
     }
 
+    /// Sends a request for a file to a specific peer.
+    ///
+    /// Sends a command to request a file from a specified peer.
     pub(crate) async fn send_request(
         &mut self,
         request: String,
@@ -128,18 +136,40 @@ impl Client {
             .expect("Command receiver not to be dropped.");
     }
 
+    /// Sends a response with file data to a peer.
+    ///
+    /// Reads data from a file and sends it to a peer through the specified response channel.
     pub(crate) async fn send_response(
         &mut self,
         filename: String,
         filepath: String,
         channel: ResponseChannel<Response>
     ) {
-        self.sender
-            .send(Command::RespondFile { filename, filepath, channel })
-            .await
-            .expect("Command receiver not to be dropped.");
+        // Read data from the file
+        let data = match std::fs::read(&filepath) {
+            Ok(data) => data,
+            Err(e) => {
+                logger::error!("Failed to read file {}: {}", filepath.display(), e);
+                Vec::new()
+            },
+        };
+
+        // Log whether the data is empty
+        logger::info!("Data provided is empty: {:?}", data.is_empty());
+
+        // Send the response
+        if let Err(e) = self.swarm
+            .behaviour_mut()
+            .request_response
+            .send_response(channel, Response { filename, data }) 
+        {
+            logger::error!("Failed to send response: {}", e);
+        }
     }
 
+    /// Pushes a username to the network.
+    ///
+    /// Sends a command to update the network with the provided username.
     pub(crate) async fn push_username(
         &mut self,
         username: String,
@@ -152,7 +182,10 @@ impl Client {
             .expect("username Pushed.");
     }
 
-     pub(crate) async fn get_username(
+    /// Requests a username for a specific peer.
+    ///
+    /// Sends a command to retrieve the username for the specified peer ID.
+    pub(crate) async fn get_username(
         &mut self,
         peer_id: String,
     ) {
@@ -164,6 +197,9 @@ impl Client {
             .expect("username got.");
     }
 
+    /// Requests the list of available rooms.
+    ///
+    /// Sends a command to get the current list of rooms from the network.
     pub(crate) async fn get_rooms(
         &mut self,
     ) {
@@ -173,6 +209,9 @@ impl Client {
             .expect("Rooms got.");
     }
 
+    /// Creates a new chat room.
+    ///
+    /// Sends a command to create a new chat room with the specified name.
     pub(crate) async fn create_room(
         &mut self,
         chat_name: String,
@@ -186,12 +225,14 @@ impl Client {
     }
 }
 
+/// Main event loop for handling network events and commands.
 pub(crate) struct EventLoop {
     swarm: Swarm<Behaviour>,
     command_receiver: mpsc::Receiver<Command>,
 }
 
 impl EventLoop {
+    /// Creates a new event loop with the given Swarm and command receiver.
     fn new(
         swarm: Swarm<Behaviour>,
         command_receiver: mpsc::Receiver<Command>,
@@ -202,6 +243,7 @@ impl EventLoop {
         }
     }
 
+    /// Runs the event loop, processing events and commands.
     pub(crate) async fn run(mut self) {
         loop {
             tokio::select! {
@@ -214,6 +256,9 @@ impl EventLoop {
         }
     }
 
+    /// Handles a network event.
+    ///
+    /// Processes different types of events such as Gossipsub messages or Kademlia queries.
     async fn handle_event(&mut self, event: SwarmEvent<BehaviourEvent>) {
         match event {
             SwarmEvent::Behaviour(BehaviourEvent::Gossipsub(event)) => {
@@ -254,7 +299,7 @@ impl EventLoop {
             },
         
             SwarmEvent::NewListenAddr { address, .. } => {
-                log::info!("New listening address: {address}");
+                logger::info!("New listening address: {address}");
                 let peer_id = self.swarm.local_peer_id().clone();
                 self.swarm.behaviour_mut().kademlia.add_address(&peer_id, address);
             },
@@ -263,6 +308,9 @@ impl EventLoop {
         }
     }
 
+    /// Handles a command received from the client.
+    ///
+    /// Executes the command such as starting listening on an address or sending a message.
     async fn handle_command(&mut self, command: Command) {
         match command {
             Command::SendMessage { message, topic } => {
@@ -284,14 +332,27 @@ impl EventLoop {
                     .send_request(&peer, Request { request });
             }
             Command::RespondFile { filename, filepath, channel } => {
-                let data = std::fs::read(&filepath).unwrap_or_else(|_| Vec::new());
-                
-                log::info!("Data provided is empty: {:?}", data.is_empty());
-                self.swarm
+                // Attempt to read data from the file, defaulting to an empty vector if an error occurs.
+                let data = match std::fs::read(&filepath) {
+                    Ok(data) => data,
+                    Err(e) => {
+                        logger::error!("Failed to read file {}: {}", filepath.display(), e);
+                        Vec::new()
+                    },
+                };
+
+                // Log whether the data is empty.
+                logger::info!("Data provided is empty: {:?}", data.is_empty());
+
+                // Attempt to send the response and log any errors that occur.
+                if let Err(e) = self.swarm
                     .behaviour_mut()
                     .request_response
-                    .send_response(channel, Response { filename, data })
-                    .expect("Connection to peer to be still open.");
+                    .send_response(channel, Response { filename, data }) 
+                {
+                    logger::error!("Failed to send response: {}", e);
+                }
+
             }
             Command::GetUsername { peer_id } => {
                 // Get's a username based on a peer_id, ensuring it is added to the "app.username" hashmap for use throughout the app

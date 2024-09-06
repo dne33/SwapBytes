@@ -38,10 +38,8 @@ use ui::screens::dm_screen::DmScreen;
 use ui::ui_router::render;
 use network::network::Client;
 
-/**
- * Sets up the terminal by enabling raw mode, switching to the alternate screen,
- * and enabling mouse capture.
- */
+// Sets up the terminal by enabling raw mode, switching to the alternate screen,
+// and enabling mouse capture.
 fn setup_terminal() -> Result<Terminal<CrosstermBackend<io::Stdout>>, Box<dyn Error>> {
     enable_raw_mode()?;
     let mut stdout = io::stdout();
@@ -51,10 +49,8 @@ fn setup_terminal() -> Result<Terminal<CrosstermBackend<io::Stdout>>, Box<dyn Er
     Ok(terminal)
 }
 
-/**
- * Restores the terminal state by disabling raw mode, switching back to the
- * normal screen, and disabling mouse capture.
- */
+// Restores the terminal state by disabling raw mode, switching back to the
+// normal screen, and disabling mouse capture.
 fn restore_terminal(
     terminal: &mut Terminal<CrosstermBackend<io::Stdout>>,
 ) -> Result<(), Box<dyn Error>> {
@@ -68,9 +64,7 @@ fn restore_terminal(
     Ok(())
 }
 
-/**
- * Initializes the network by creating a client and starting the event loop in a background task.
- */
+// Initializes the network by creating a client and starting the event loop in a background task.
 async fn init_network() -> Result<Client, Box<dyn Error>> {
     let (mut network_client, network_event_loop) = network::network::new().await?;
     spawn(network_event_loop.run());
@@ -81,9 +75,7 @@ async fn init_network() -> Result<Client, Box<dyn Error>> {
     Ok(network_client)
 }
 
-/**
- * Handles the main event loop for the DM screen, drawing the UI and processing events.
- */
+// Handles the main event loop for the DM screen, drawing the UI and processing events.
 async fn run_login_loop(
     terminal: &mut Terminal<CrosstermBackend<io::Stdout>>,
     network_client: &mut Client,
@@ -99,9 +91,7 @@ async fn run_login_loop(
     Ok(())
 }
 
-/**
- * Handles the screen transitions and updating logic based on the current screen.
- */
+// Handles the screen transitions and updating logic based on the current screen.
 async fn run_screen_loop(
     terminal: &mut Terminal<CrosstermBackend<io::Stdout>>,
     network_client: &mut Client,
@@ -131,10 +121,8 @@ async fn run_screen_loop(
     Ok(())
 }
 
-/**
- * Main entry point for the application.
- * Initializes the network, sets up the terminal, and runs the main event loop.
- */
+// Main entry point for the application.
+// Initializes the network, sets up the terminal, and runs the main event loop.
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn Error>> {
     // Initialize logger and network

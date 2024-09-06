@@ -6,7 +6,6 @@ use std::collections::HashMap;
 use crate::network::network::{Response, Client};
 use libp2p_request_response::ResponseChannel;
 use crate::logger;
-
 use std::sync::atomic::{AtomicBool, Ordering};
 
 #[derive(Clone, PartialEq, Debug)]
@@ -21,41 +20,40 @@ pub enum Screen {
 pub struct App {
     /// Current value of the input box
     pub input: String,
-    /// Position of cursor in the editor area.
+    /// Position of cursor in the editor area
     pub character_index: usize,
-    /// History of recorded messages
+    /// History of recorded messages for public rooms
     pub public_messages: HashMap<String, Vec<String>>,
-
+    /// History of recorded messages for private conversations
     pub private_messages: HashMap<String, Vec<String>>,
-
+    /// Currently displayed screen
     pub current_screen: Screen,
-
+    /// Username of the current user
     pub username: String,
-
+    /// Number of connected peers
     pub connected_peers: i16,
-
     /// List of available rooms
     pub rooms: Vec<String>,
-
-    /// State of the room list for selection
+    /// State for managing the room list selection
     pub room_state: ListState,
-
+    /// Index of the currently selected room
     pub current_room: usize,
-
+    /// List of peer IDs
     pub peers: Vec<PeerId>,
-
+    /// Mapping of peer IDs to usernames
     pub usernames: HashMap<String, String>,
-
+    /// List of peers without usernames
     pub peers_no_username: Vec<PeerId>,
-
-    updating_usernames: AtomicBool, // Atomic flag to track updates
-
+    /// Flag indicating if usernames are being updated
+    updating_usernames: AtomicBool,
+    /// ID of the current peer
     pub my_peer_id: Option<PeerId>,
-
+    /// List of current requests
     pub current_requests: Vec<RequestItem>,
 }
 
 impl App {
+    // Creates a new App instance with default values
     pub fn new() -> Self {
         let mut room_state = ListState::default();
         room_state.select(Some(0)); // Start with the first room selected
@@ -67,12 +65,11 @@ impl App {
             "arts".to_string(),
         ];
 
-        // Create a HashMap to store messages for each room
+        // Initialize a HashMap to store messages for each room
         let mut public_messages = HashMap::new();
         for room in &rooms {
             public_messages.insert(room.clone(), Vec::new());
         }
-
 
         Self {
             input: String::new(),
@@ -94,26 +91,26 @@ impl App {
         }
     }
 
+    // Moves the cursor one position to the left
     pub fn move_cursor_left(&mut self) {
         let cursor_moved_left = self.character_index.saturating_sub(1);
         self.character_index = self.clamp_cursor(cursor_moved_left);
     }
 
+    // Moves the cursor one position to the right
     pub fn move_cursor_right(&mut self) {
         let cursor_moved_right = self.character_index.saturating_add(1);
         self.character_index = self.clamp_cursor(cursor_moved_right);
     }
 
+    // Inserts a new character at the cursor position
     pub fn enter_char(&mut self, new_char: char) {
         let index = self.byte_index();
         self.input.insert(index, new_char);
         self.move_cursor_right();
     }
 
-    /// Returns the byte index based on the character position.
-    ///
-    /// Since each character in a string can be contain multiple bytes, it's necessary to calculate
-    /// the byte index based on the index of the character.
+    // Returns the byte index based on the character position
     fn byte_index(&mut self) -> usize {
         self.input
             .char_indices()
@@ -122,38 +119,36 @@ impl App {
             .unwrap_or(self.input.len())
     }
 
+    // Deletes the character before the cursor
     pub fn delete_char(&mut self) {
         let is_not_cursor_leftmost = self.character_index != 0;
         if is_not_cursor_leftmost {
-            // Method "remove" is not used on the saved text for deleting the selected char.
-            // Reason: Using remove on String works on bytes instead of the chars.
-            // Using remove would require special care because of char boundaries.
-
             let current_index = self.character_index;
             let from_left_to_current_index = current_index - 1;
 
-            // Getting all characters before the selected character.
+            // Getting all characters before and after the selected character
             let before_char_to_delete = self.input.chars().take(from_left_to_current_index);
-            // Getting all characters after selected character.
             let after_char_to_delete = self.input.chars().skip(current_index);
 
-            // Put all characters together except the selected one.
-            // By leaving the selected one out, it is forgotten and therefore deleted.
+            // Reconstruct the string excluding the selected character
             self.input = before_char_to_delete.chain(after_char_to_delete).collect();
             self.move_cursor_left();
         }
     }
 
+    // Clamps the cursor position within the valid range
     fn clamp_cursor(&self, new_cursor_pos: usize) -> usize {
         new_cursor_pos.clamp(0, self.input.chars().count())
     }
 
+    // Resets the cursor position to the start
     fn reset_cursor(&mut self) {
         self.character_index = 0;
     }
 
+    // Submits a public message to the current room
     pub fn submit_public_room_message(&mut self) {
-        let final_msg = format!("{}: {}",self.username.clone(), self.input.clone() );
+        let final_msg = format!("{}: {}", self.username.clone(), self.input.clone());
         // Determine the current room
         if let Some(current_room_name) = self.rooms.get(self.current_room) {
             // Push the message to the appropriate room's message vector
@@ -166,10 +161,10 @@ impl App {
         self.reset_cursor();
     }
 
+    // Submits a private message to a specific topic
     pub fn submit_private_message(&mut self, topic: String) {
-        let final_msg = format!("{}: {}",self.username.clone(), self.input.clone() );
-
-        // Push the message to the appropriate room's message vector
+        let final_msg = format!("{}: {}", self.username.clone(), self.input.clone());
+        // Push the message to the appropriate topic's message vector
         self.private_messages.entry(topic.clone())
             .or_insert_with(Vec::new)
             .push(final_msg.clone());
@@ -177,18 +172,19 @@ impl App {
         self.reset_cursor();
     }
 
+    // Clears the input field
     pub fn clear_input(&mut self) {
         self.input.clear();
         self.reset_cursor();
     }
 
+    // Updates the list of usernames based on connected peers
     pub async fn update_usernames(&mut self, client: &mut Client) {
         if self.updating_usernames.load(Ordering::SeqCst) {
-            return; // An update is already in progress, so we skip
+            return; // An update is already in progress
         }
         logger::info!("{:?}, {:?}, {:?}", self.usernames.len(), self.peers.len(), self.peers_no_username.len());
         self.updating_usernames.store(true, Ordering::SeqCst);
-        
 
         if self.usernames.len() > (self.peers.len() - self.peers_no_username.len()) {
             let mut new_usernames = HashMap::new();
@@ -199,7 +195,6 @@ impl App {
                 }
             }
             self.usernames = new_usernames;
-
         } else if self.usernames.len() < (self.peers.len() - self.peers_no_username.len()) {
             for peer in &self.peers {
                 let peer_to_string = peer.to_string();
@@ -218,7 +213,6 @@ impl App {
         self.updating_usernames.store(false, Ordering::SeqCst);
         logger::info!("{:?}", self.usernames);
     }
-
 }
 
 pub struct RequestItem {
@@ -228,5 +222,6 @@ pub struct RequestItem {
 }
 
 lazy_static! {
+    // Global application state
     pub static ref APP: Arc<Mutex<App>> = Arc::new(Mutex::new(App::new()));
 }
