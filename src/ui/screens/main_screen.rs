@@ -4,7 +4,7 @@ use libp2p::gossipsub;
 use ratatui::{
     crossterm::event::{KeyCode, KeyEvent},
     prelude::*,
-    widgets::{Block, List, ListItem, Paragraph},
+    widgets::{Block, Paragraph},
 };
 use std::rc::Rc;
 use crate::logger;
@@ -33,19 +33,26 @@ pub fn render(frame: &mut Frame, chunk: Rc<[ratatui::layout::Rect]>) {
 
     let current_room_name = app.rooms.get(app.current_room);
 
-    let messages: Vec<ListItem> = if let Some(room_name) = current_room_name {
-        app.public_messages
-            .get(room_name)
-            .unwrap() // Use an empty vector if no messages are found
-            .iter()
-            .map(|m| ListItem::new(Line::from(Span::raw(m))))
-            .collect()
+    let messages: Vec<Line> = if let Some(room_name) = current_room_name {
+    app.public_messages
+        .get(room_name)
+        .unwrap() // Use an empty vector if no messages are found
+        .iter()
+        .map(|m| Line::from(Span::raw(m)))
+        .collect()
     } else {
         Vec::new() // If no room is selected, return an empty vector
     };
-
+    let total_messages = messages.clone().len() + 3;
+    let num_lines =  <u16 as Into<_>>::into(messages_area.height);
+    
+    let scroll_position = if total_messages > num_lines {
+        total_messages - num_lines
+    } else {
+        0
+    };
     let current_room = &app.rooms[app.current_room];
-    let messages = List::new(messages).block(Block::bordered().title(format!("Current Room: {}", current_room)));
+    let messages = Paragraph::new(messages).block(Block::bordered().title(format!("Current Room: {}", current_room))).scroll((scroll_position as u16, 0));
     frame.render_widget(messages, messages_area);
 }
 

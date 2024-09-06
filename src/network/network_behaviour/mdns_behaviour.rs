@@ -3,7 +3,6 @@ use crate::logger;
 use crate::network::network::Behaviour;
 use crate::state::APP;
 use libp2p::gossipsub::IdentTopic;
-use std::cmp::Ordering;
 
 /// Handles mDNS events and updates the swarm and application state accordingly.
 ///

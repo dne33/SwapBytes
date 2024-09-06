@@ -102,16 +102,26 @@ impl DmScreen {
         peer_ids.sort(); // Sort alphabetically
         let message_key = peer_ids.join("_");
 
-        // Messages area with the username of the selected peer as the title
-        let binding = vec!["Ensure a peer is connected to Direct Message".to_string()];
-        let private_messages = app.private_messages.get(&message_key)
-            .unwrap_or(&binding)
+        let private_messages: Vec<Line> = 
+            app.private_messages
+            .get(&message_key)
+            .unwrap() // Use an empty vector if no messages are found
             .iter()
-            .map(|m| ListItem::new(Line::from(Span::raw(m))))
-            .collect::<Vec<_>>();
-        let message_store = List::new(private_messages)
-            .block(Block::bordered().title(format!("Messages with {}", selected_username)));
-        frame.render_widget(message_store, messages_area);
+            .map(|m| Line::from(Span::raw(m)))
+            .collect();
+        let total_messages = private_messages.clone().len() + 3;
+        let num_lines =  <u16 as Into<_>>::into(messages_area.height);
+        
+        let scroll_position = if total_messages > num_lines {
+            total_messages - num_lines
+        } else {
+            0
+        };
+        let private_messages = Paragraph::new(private_messages).block(Block::bordered().title(format!("Messages with {}", selected_username))).scroll((scroll_position as u16, 0));
+
+        frame.render_widget(private_messages, messages_area);
+
+
         self.peers = peers.clone();
         let peer_list: Vec<String> = peers.iter().map(|peer_id| format!("{}", peer_id.to_string())).collect();  
         let peer_items: Vec<ListItem> = peer_list
