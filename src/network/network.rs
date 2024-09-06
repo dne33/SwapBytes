@@ -146,25 +146,17 @@ impl Client {
         channel: ResponseChannel<Response>
     ) {
         // Read data from the file
-        let data = match std::fs::read(&filepath) {
+        match std::fs::read(&filepath) {
             Ok(data) => data,
             Err(e) => {
-                logger::error!("Failed to read file {}: {}", filepath.display(), e);
+                logger::error!("Failed to read file {}: {:?}", filepath, e);
                 Vec::new()
             },
         };
-
-        // Log whether the data is empty
-        logger::info!("Data provided is empty: {:?}", data.is_empty());
-
-        // Send the response
-        if let Err(e) = self.swarm
-            .behaviour_mut()
-            .request_response
-            .send_response(channel, Response { filename, data }) 
-        {
-            logger::error!("Failed to send response: {}", e);
-        }
+        self.sender
+            .send(Command::RespondFile { filename, filepath, channel })
+            .await
+            .expect("Command receiver not to be dropped.");
     }
 
     /// Pushes a username to the network.
@@ -336,7 +328,7 @@ impl EventLoop {
                 let data = match std::fs::read(&filepath) {
                     Ok(data) => data,
                     Err(e) => {
-                        logger::error!("Failed to read file {}: {}", filepath.display(), e);
+                        logger::error!("Failed to read file {}: {}", filepath, e);
                         Vec::new()
                     },
                 };
@@ -350,7 +342,7 @@ impl EventLoop {
                     .request_response
                     .send_response(channel, Response { filename, data }) 
                 {
-                    logger::error!("Failed to send response: {}", e);
+                    logger::error!("Failed to send response: {:?}", e);
                 }
 
             }
