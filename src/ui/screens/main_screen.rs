@@ -9,6 +9,10 @@ use ratatui::{
 use std::rc::Rc;
 use crate::logger;
 
+/// Renders the chat screen, including the input field and message list.
+///
+/// Displays the input field for user messages and a list of messages from the
+/// current chat room. Positions the cursor in the input field.
 pub fn render(frame: &mut Frame, chunk: Rc<[ratatui::layout::Rect]>) {
     let app = APP.lock().unwrap();
     let vertical = Layout::vertical([
@@ -45,12 +49,17 @@ pub fn render(frame: &mut Frame, chunk: Rc<[ratatui::layout::Rect]>) {
     frame.render_widget(messages, messages_area);
 }
 
+/// Handles keyboard events for the chat interface.
+///
+/// Manages user input for message sending and room creation. Updates the
+/// application state and interacts with the server as needed. Returns
+/// `Ok(true)` if the Escape key is pressed, otherwise `Ok(false)`.
 pub async fn handle_events(client: &mut Client, key: KeyEvent) -> Result<bool, std::io::Error> {
     let mut app = APP.lock().unwrap();
     match key.code {
         KeyCode::Enter => {
-            if app.input.clone().starts_with("!create room ") {
-                let chat_name: &str = &app.input.clone()[13..app.input.clone().len()];
+            if app.input.starts_with("!create room ") {
+                let chat_name = &app.input[13..];
                 logger::info!("Attempting to create room: {}", chat_name);
                 let chat_name_len = chat_name.len();
                 if chat_name_len <= 64 && chat_name_len > 0 {
@@ -61,33 +70,21 @@ pub async fn handle_events(client: &mut Client, key: KeyEvent) -> Result<bool, s
                     logger::info!("Failed to add chat room name, name too long")
                 }
             } else {
-                let message = format!("{}: {}", app.username.clone(), app.input.clone());
+                let message = format!("{}: {}", app.username, app.input);
                 app.submit_public_room_message();
                 let room_name = app.rooms.get(app.current_room).unwrap_or(&"global".to_string()).clone();
                 let topic = gossipsub::IdentTopic::new(room_name);
                 client.submit_message(message, topic).await;
             }
-            
         }
-        KeyCode::Char(to_insert) => {
-            app.enter_char(to_insert);
-        }
-        KeyCode::Backspace => {
-            app.delete_char();
-        }
-        KeyCode::Left => {
-            app.move_cursor_left();
-        }
-        KeyCode::Right => {
-            app.move_cursor_right();
-        },
-        KeyCode::Tab => {
-        },
+        KeyCode::Char(to_insert) => app.enter_char(to_insert),
+        KeyCode::Backspace => app.delete_char(),
+        KeyCode::Left => app.move_cursor_left(),
+        KeyCode::Right => app.move_cursor_right(),
         KeyCode::Esc => {
             return Ok(true);
-        }
-        _ => {}
-    }
-        
+        },
+        _ => {},
+    }  
     Ok(false)
 }
