@@ -55,21 +55,11 @@ pub async fn handle_events(client: &mut Client, key: KeyEvent) -> Result<bool, s
                 app.clear_input();
                 return Ok(true);
             }
-        }
-        KeyCode::Char(to_insert) => {
-            app.enter_char(to_insert);
-        }
-        KeyCode::Backspace => {
-            app.delete_char();
-        }
-        KeyCode::Left => {
-            app.move_cursor_left();
-        }
-        KeyCode::Right => {
-            app.move_cursor_right();
         },
-        KeyCode::Tab => {
-        },
+        KeyCode::Char(to_insert) => app.enter_char(to_insert),
+        KeyCode::Backspace => app.delete_char(),
+        KeyCode::Left => app.move_cursor_left(),
+        KeyCode::Right => app.move_cursor_right(),
         _ => {}
     }
     Ok(false)   
