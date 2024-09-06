@@ -21,7 +21,7 @@ fn render_tabs(frame: &mut Frame, area: Rect, current_screen: &Screen) {
     let tab_titles = vec![
         Span::raw("Main"),
         Span::raw("Select Room"),
-        Span::raw("DM"),
+        Span::raw("Direct Messages"),
     ];
     
     let current_index = match current_screen {

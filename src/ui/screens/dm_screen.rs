@@ -103,7 +103,7 @@ impl DmScreen {
         let message_key = peer_ids.join("_");
 
         // Messages area with the username of the selected peer as the title
-        let binding = vec!["Ensure a peer is connected to DM".to_string()];
+        let binding = vec!["Ensure a peer is connected to Direct Message".to_string()];
         let private_messages = app.private_messages.get(&message_key)
             .unwrap_or(&binding)
             .iter()
